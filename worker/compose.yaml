@@ -1,0 +1,34 @@
+name: docker-dashboard
+services:
+  socket-proxy:
+    container_name: docker-dashboard-socket-proxy
+    image: haproxy:3.0-alpine
+    restart: unless-stopped
+    user: "0:0"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./proxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks: [docker-internal]
+  collector:
+    container_name: docker-dashboard-collector
+    image: python:3.13-alpine
+    user: "${COLLECTOR_UID:?Run the installer to set the collector UID}:${COLLECTOR_GID:?Run the installer to set the collector GID}"
+    restart: unless-stopped
+    command: [python, -u, /app/collector.py]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - ./collector.py:/app/collector.py:ro
+      - ./collector.json:/run/config/collector.json:ro
+    depends_on: [socket-proxy]
+    networks: [docker-internal, outbound]
+networks:
+  docker-internal:
+    internal: true
+  outbound: {}

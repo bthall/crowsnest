@@ -1,51 +1,108 @@
+<p align="center">
+  <img src="worker/assets/crowsnest-mark.png" alt="Crowsnest crow logo" width="140">
+</p>
+
 # Crowsnest
 
-Crowsnest is a private Docker fleet monitor with one outbound collector per host. Reports arrive every 30 seconds; the board refreshes every 15 seconds and marks data stale after 120 seconds. State and health are separate, and containers without HEALTHCHECK are explicitly labeled.
+**Your fleet. In sight.**
 
-## Connect a host
+Crowsnest is a private dashboard for Docker host and container status. A small outbound collector on each host sends reports to a dashboard hosted through ChatGPT Sites. It gives you one place to check container state, health, uptime, and restart counts.
 
-Choose Connect a host, enter a unique hostname, and download docker-watch-setup.sh. Transfer it privately to your Linux Docker host, review it, then run `bash docker-watch-setup.sh` as your normal user. The default installation directory is `/srv/docker/docker-dashboard-collector`, following the preference to keep Docker projects under `/srv/docker`. Pass an absolute directory as the optional first argument to use another location. The script refuses to overwrite an existing directory.
+## Features
 
-The installer requests sudo only if needed to create the directory or access Docker. It does not change Docker socket permissions or account group membership. If started through sudo, it assigns the files to the invoking user. The directory is mode 0700; `collector.json` and `.env` are mode 0600. Code and the proxy configuration are mode 0644. `.env` sets the collector's UID/GID to the file owner so it can read its credentials without widening their permissions. The Compose project is `docker-dashboard`; containers are named `docker-dashboard-collector` and `docker-dashboard-socket-proxy`. One collector installation is supported per Docker daemon. No ports are published.
+- Multiple Docker hosts in one private dashboard.
+- Separate process-state and Docker health indicators.
+- Reports every 30 seconds, with stale-data detection after two minutes.
+- A restricted Docker socket proxy and no published collector ports.
+- Installation under `/srv/docker` with user-owned files and private credentials.
+- Migration that preserves existing host registrations and reporting tokens.
 
-From the created directory, use `docker compose logs -f collector` to troubleshoot. Keep the downloaded script and collector.json private: both contain reporting credentials. Do not commit them to Git. Repeat registration for additional hosts. The socket path defaults to /var/run/docker.sock; rootless Docker requires adjusting it.
+Crowsnest displays the latest status. It does not control containers or retain historical metrics.
 
-## Move an existing collector
+## Quick start
 
-Use **Move existing collector** on the dashboard to download `docker-watch-update.sh`. On each server, run `bash docker-watch-update.sh /path/to/existing/docker-watch-directory`. Use `sudo bash ...` if the old directory belongs to root or is under `/root`; the new installation will still belong to your invoking user. The optional second argument chooses a different target directory.
+You need an existing private Crowsnest dashboard, a Linux host with Docker Engine and Docker Compose v2, and Docker access directly or through sudo.
 
-This migrates to `/srv/docker/docker-dashboard-collector` with the readable container names above. It copies the existing `collector.json` unchanged, preserving the host ID and reporting credentials, so no new host registration is required. It validates the new Compose configuration and pulls images before stopping the original project. It starts the new project and attempts to restart the old project if startup fails. The original files remain for rollback; keep them private. The target must not already exist. The old project must use the project name from its Compose file or original directory, rather than a custom CLI `-p` override.
+1. Open your dashboard and choose **Connect a host**.
+2. Enter a unique host name and download `docker-watch-setup.sh`.
+3. Review the script and transfer it privately to the Docker host.
+4. Run it as your normal user:
 
-## Architecture and security
+   ```bash
+   bash docker-watch-setup.sh
+   ```
 
-HAProxy permits only GET /version and versioned container list/inspect endpoints. All other paths and methods are denied. The proxy mounts the Docker socket and joins only an internal network. The collector joins that network plus an outbound network. Socket access is privileged; a read-only mount does not restrict API methods. The proxy allowlist provides that restriction. Inspection may contain sensitive local fields, so the collector must remain trusted.
+The default directory is `/srv/docker/docker-dashboard-collector`. The script asks for sudo when directory creation or Docker access requires it. It refuses to overwrite an existing installation.
 
-Only container ID, name, image, state, health, restart count, start/finish timestamps, and Engine version leave the host. No environment variables, logs, mounts, or network addresses are transmitted. A partial collection sends no report. Reports are limited to 250 containers and 128 KiB. Running does not guarantee application availability, and restart counts reset when containers are recreated.
+Check the collector:
 
-Private Sites access protects viewing. Viewer APIs additionally require the platform authenticated-user header. Registration requires the browser Origin to match the request URL origin, supporting both the generated Site URL and attached custom domains. The collector continues to report to the configured SITE_ORIGIN endpoint. Ingestion requires a platform service credential and a host-specific token; host tokens are stored as SHA-256 hashes. Credentials are runtime secrets, not committed source. Keep the Site owner-private; reassess authorization before sharing it.
+```bash
+cd /srv/docker/docker-dashboard-collector
+sudo docker compose logs -f collector
+```
 
-R2 stores configuration documents and the latest JSON snapshot for each host in separate keys. There is no historical metrics retention or remote container control.
+Omit sudo if your account already has Docker access. Successful reporting logs `Status delivered: ... containers`. The dashboard should show the host as **Reporting**.
 
-## Operations
+The downloaded setup script contains reporting credentials. Keep it and `collector.json` private. Do not commit generated installation files.
 
-Use `docker compose pull` and `docker compose up -d` from the collector directory to update images; pin approved image digests for exact reproducibility. `docker compose down` stops reporting and the board becomes stale.
+See the [installation and migration guide](docs/deployment.md) for custom paths, existing installations, and upgrades.
 
-Collector credentials are generated once. Retain the protected files; this version has no recovery or token rotation UI. If files are lost, register a new unique host name; the old entry stays stale. Service credential rotation requires updating every collector. To revoke a host, remove its hosts/<uuid>.json object in Site storage administration.
+## Architecture
 
-## Development and validation
+```mermaid
+flowchart LR
+    subgraph Host[Docker host]
+        Engine[Docker Engine]
+        Proxy[Restricted socket proxy]
+        Collector[Python collector]
+        Collector -->|Read allowed status endpoints| Proxy
+        Proxy -->|Unix socket| Engine
+    end
+    Collector -->|Authenticated HTTPS reports| Dashboard[Crowsnest Worker]
+    User[Authorized browser] -->|ChatGPT sign-in| Dashboard
+    Dashboard --> Storage[Cloudflare R2]
+```
 
-The deployed app is a dependency-free Worker ESM module. The repository contains only the dependencies it uses; no npm dependencies need to be installed.
+The collector sends a limited set of status fields; it does not transmit container environment variables, logs, mounts, or network addresses. Dashboard access is enforced by ChatGPT Sites, and each host has a separate reporting token.
 
-Run `node scripts/build-board.mjs`, `node scripts/validate-artifact.mjs`, `node scripts/check-board.mjs`, and `node scripts/check-installer.mjs`. Checks cover private routes, origin validation, token rejection, report limits, field allowlisting, persistence, multiple hosts, and installer generation using an R2 test double. Installer execution tests use a Docker command double to verify file permissions, clean names, migration, overwrite protection, and startup rollback; run them as an ordinary user as well to exercise the sudo fallback. Installer shell syntax and Python syntax are also checked. Temporary-container tests verified that a non-root collector can read mode-0600 credentials and the restricted proxy can read Docker status without accepting other endpoints. A live reporting smoke test is required after installing on each host. Browser and optional WebMCP validation were unavailable in this environment.
+Read the [architecture guide](docs/architecture.md) and [security policy](SECURITY.md) for the trust boundaries and configuration model.
 
-## Repository guide
+## Development
 
-- [Architecture and authentication](docs/architecture.md)
-- [Install or migrate a collector](docs/deployment.md)
-- [Development and automated checks](docs/development.md)
+Use Node.js 22.13 or newer, Bash, Git, and Python 3 on Linux. The Worker has no npm dependencies.
 
-GitHub tracks source and runs checks; deployment remains managed through ChatGPT Sites.
+```bash
+npm ci --ignore-scripts --no-audit --no-fund
+npm run check
+```
 
-## Crowsnest branding
+Checks cover the Worker build, API behavior, generated installers, migration, and common secret patterns. GitHub Actions runs the checks on pushes and pull requests. Tests use storage and Docker command doubles; they do not contact the production dashboard.
 
-The crow emblem and dark-slate/copper interface identify Crowsnest. Existing collector filenames, Compose names, installation paths, and API endpoints stay compatible with the installed fleet. Brand assets and the image-generation brief are stored under `worker/assets`.
+See [development and validation](docs/development.md) for build output, test coverage, and live integration checks.
+
+## Documentation
+
+| Guide | Contents |
+| --- | --- |
+| [Installation and migration](docs/deployment.md) | New hosts, custom paths, migration, and upgrades |
+| [Configuration](docs/configuration.md) | Runtime bindings, collector configuration, paths, and limits |
+| [Architecture](docs/architecture.md) | Data flow, access control, and hosting |
+| [Troubleshooting](docs/troubleshooting.md) | Permissions, reporting errors, and stale hosts |
+| [Development](docs/development.md) | Local checks, CI, and release validation |
+| [Contributing](CONTRIBUTING.md) | Change scope, review, and validation expectations |
+| [Security](SECURITY.md) | Credential handling and vulnerability reporting |
+| [Brand assets](worker/assets/README.md) | Logo and generation brief |
+
+## Compatibility and limitations
+
+The product name is Crowsnest. Existing collector filenames, the `docker-dashboard` Compose project, container names, paths, and API routes remain compatible with existing installations.
+
+This version supports one collector installation per Docker daemon and up to 100 registered hosts. A host report supports up to 250 containers and 128 KiB. Rootless Docker requires manual socket-path and user-mapping adjustments. Credential recovery, token rotation, and host deletion do not have dashboard controls.
+
+GitHub stores source and runs checks. Pushing to this repository does not publish the dashboard; deployment remains managed through ChatGPT Sites.
+
+## Support and maintenance
+
+Maintained by [@bthall](https://github.com/bthall). Use repository issues for bugs and feature requests, with secrets removed from any diagnostic information. Follow [SECURITY.md](SECURITY.md) for security concerns.
+
+No license has been selected for this repository.

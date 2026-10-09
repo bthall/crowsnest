@@ -1,0 +1,18 @@
+import {mkdtempSync,rmSync} from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {spawnSync} from 'node:child_process';
+const directory=mkdtempSync(path.join(os.tmpdir(),'docker-dashboard-checks-'));
+const env={...process.env,DOCKER_WATCH_TEST_DIRECTORY:directory};
+// Test ownership against the actual user running the tests.
+delete env.SUDO_UID;
+delete env.SUDO_GID;
+let code=0;
+try {
+  for(const script of ['scripts/check-secrets.mjs','scripts/validate-artifact.mjs','scripts/check-board.mjs','scripts/check-installer.mjs']) {
+    const result=spawnSync(process.execPath,[script],{env,stdio:'inherit'});
+    if(result.error)throw result.error;
+    if(result.status!==0){code=result.status??1;break;}
+  }
+} finally {rmSync(directory,{recursive:true,force:true});}
+process.exitCode=code;

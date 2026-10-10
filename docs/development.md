@@ -10,7 +10,7 @@ python3 -c "import ast,pathlib; ast.parse(pathlib.Path('worker/collector.py').re
 
 `npm run build` assembles the Worker and embedded collector assets into `dist/server/index.js`. The hosting manifest is copied into `dist/.openai/hosting.json`. Build output is ignored by Git.
 
-The checks cover private routes, same-origin registration on generated and custom domains, report authentication and limits, persistence, field allowlisting, duplicate host names, and installer generation. Installer tests execute generated scripts against a Docker command double and verify file ownership/permissions, clean names, overwrite protection and private credential retention after startup failure. They do not contact production or require real reporting credentials.
+The checks cover private routes, same-origin writes on generated and custom domains, report authentication and limits, persistence, field allowlisting, duplicate host names, canonical redirects, and installer generation. Compose enrollment checks parse the tar package with Python's standard tar reader, verify file types/modes, and cover rename/removal, staged replacement/expiry, bounded activity, and removed-host rejection. Legacy installer tests execute generated scripts against a Docker command double and verify file ownership/permissions, clean names, overwrite protection and private credential retention after startup failure. They do not contact production or require real reporting credentials.
 
 GitHub Actions runs these checks on pushes and pull requests. The Security workflow runs on these events, weekly, and on manual dispatch. It uses checksum-verified Gitleaks for complete Git history and a digest-pinned Semgrep image with local rules. CI has read-only repository permissions and does not deploy the Site or change any host.
 
@@ -24,7 +24,7 @@ For a live integration check, use a temporary installation on a Docker host. Ver
 
 Run `npm run preview` and open `http://127.0.0.1:4175`. The server binds only to loopback, uses fictional data, and cannot register hosts. Use browser screenshots rather than generated mockups. See [screenshot provenance](screenshots/README.md).
 
-Playwright is a development tool supplied by the Codex Playwright skill; it is not a production dependency. Capture wide and narrow layouts together, exercise search, attention filtering, host selection, errors, empty states, and keyboard setup. Inspect console output and run an accessibility audit.
+Playwright is a development tool supplied by the Codex Playwright skill; it is not a production dependency. Capture wide and narrow layouts together. Exercise fleet and host search, attention filtering, activity/alerts, host management, enrollment through a first report, continuation, errors, empty states, and keyboard focus. Use synthetic API responses for mutations in browser QA; the API suite separately checks storage and credential behavior. Inspect console output and run an accessibility audit.
 
 ## Security scans
 

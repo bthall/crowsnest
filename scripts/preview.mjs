@@ -37,6 +37,14 @@ const assets = new Map([
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   res.setHeader('Cache-Control', 'no-store');
+  if(url.pathname==='/api/history' && req.method==='GET') {
+    const events=[
+      {at:ago(45),kind:'status',text:'immich-server: running/healthy → running/unhealthy',hostId:'demo-lighthouse',hostName:'lighthouse'},
+      {at:ago(150),kind:'restart',text:'redis: 2 additional restart(s)',hostId:'demo-lighthouse',hostName:'lighthouse'},
+      {at:ago(1800),kind:'report',text:'First collector report received',hostId:'demo-rookery',hostName:'rookery'},
+    ];
+    res.setHeader('Content-Type','application/json');res.end(JSON.stringify({events:events.filter(e=>!url.searchParams.has('host')||e.hostId===url.searchParams.get('host'))}));return;
+  }
   if (url.pathname === '/api/hosts') {
     res.setHeader('Content-Type', 'application/json');
     if (req.method !== 'GET') {

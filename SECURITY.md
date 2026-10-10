@@ -17,7 +17,7 @@ The socket proxy permits only Docker version, container list, and container insp
 ## Credential handling
 
 - Configure Site secrets through the hosting platform, not source files or the hosting manifest.
-- Keep downloaded setup scripts and `collector.json` private. Both contain reporting credentials.
+- Keep downloaded Compose packages, legacy setup scripts, and `collector.json` private. They contain reporting credentials.
 - Keep installation directories at 0700 and credential files at 0600.
 - Use synthetic credentials in examples and automated tests.
 - Exclude generated installs, environment files, keys, and credential-bearing diagnostics from Git.
@@ -28,6 +28,8 @@ The tracked `.openai/hosting.json` contains a non-secret Site identifier and an 
 
 The local secret check detects common credential patterns and generated credential file names in tracked source. The `--history` mode additionally checks local Git blob history. CI also runs Gitleaks across complete Git history with redacted output, focused Semgrep application rules, and npm audit. These checks complement manual review; they do not detect every possible secret format.
 
-If a credential is exposed, revoke or rotate it before treating deletion as remediation. Updating the platform service credential requires updating every collector. There is currently no token-rotation UI. Coordinate token revocation and storage changes with the repository owner and verify reporting afterward.
+If a credential is exposed, revoke or rotate it before treating deletion as remediation. **Manage host** offers staged per-host token replacement: the current token remains valid until the replacement's first valid report, which must arrive within ten minutes. Use host removal for immediate host-token revocation when a token is compromised, then enroll again. Updating the platform service credential requires changing the Site runtime secret and updating every collector. Verify reporting afterward.
+
+Activity records describe recent operational changes and exclude credentials. They are bounded by count and age and are not a transactional security audit trail. Host removal deletes its registration, snapshot, and history. Alerts are displayed in the dashboard and do not send data to an external notification provider.
 
 The dashboard serves JavaScript and CSS as authenticated assets and blocks inline scripts and styles with CSP. External container fields render as text through DOM APIs. Separate owners should deploy separate private Sites; the current host collection has one Site-level owner boundary.

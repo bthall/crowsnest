@@ -15,7 +15,7 @@ services:
   collector:
     container_name: docker-dashboard-collector
     image: python:3.13-alpine
-    user: "${COLLECTOR_UID:?Run the installer to set the collector UID}:${COLLECTOR_GID:?Run the installer to set the collector GID}"
+    user: "${COLLECTOR_UID:?Set COLLECTOR_UID in .env}:${COLLECTOR_GID:?Set COLLECTOR_GID in .env}"
     restart: unless-stopped
     command: [python, -u, /app/collector.py]
     read_only: true

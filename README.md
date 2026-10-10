@@ -25,8 +25,12 @@ Crowsnest is a private dashboard for Docker host and container status. A small o
 - A restricted Docker socket proxy and no published collector ports.
 - Installation under `/srv/docker` with user-owned files and private credentials.
 - Search by container or image, plus a filter for containers that need attention.
+- Fleet-wide container and host search with clearly labeled stale reports.
+- Guided Compose enrollment with file review, deployment steps, and first-report confirmation.
+- Host renaming, removal, and staged reporting-token replacement.
+- Recent activity and in-app alerts for stale hosts and unhealthy, restarting, or dead containers.
 
-Crowsnest displays the latest status. It does not control containers or retain historical metrics.
+Crowsnest displays the latest status and records recent changes. It does not control containers or retain historical metrics. Activity retains up to 100 events per host from the last 30 days; alerts appear in the dashboard without external notifications.
 
 ## Quick start
 
@@ -35,15 +39,12 @@ For a separate dashboard, follow [ChatGPT Sites setup](docs/chatgpt-sites.md) an
 You need an existing private Crowsnest dashboard, a Linux host with Docker Engine and Docker Compose v2, and Docker access directly or through sudo.
 
 1. Open your dashboard and choose **Connect a host**.
-2. Enter a unique host name and download `docker-watch-setup.sh`.
-3. Review the script and transfer it privately to the Docker host.
-4. Run it as your normal user:
+2. Enter a unique host name and choose **Prepare setup**.
+3. Download the Compose package, inspect its files, and transfer it privately to the host.
+4. Follow the displayed Docker Compose commands as your normal user. Choose whether Docker commands need sudo.
+5. Leave setup open to confirm the first collector report.
 
-   ```bash
-   bash docker-watch-setup.sh
-   ```
-
-The default directory is `/srv/docker/docker-dashboard-collector`. The script asks for sudo when directory creation or Docker access requires it. It refuses to overwrite an existing installation.
+The default directory is `/srv/docker/docker-dashboard-collector`. The commands create a private directory owned by your user and refuse to overwrite an existing installation. No downloaded shell script is needed in the dashboard flow.
 
 Check the collector:
 
@@ -54,7 +55,7 @@ sudo docker compose logs -f collector
 
 Omit sudo if your account already has Docker access. Successful reporting logs `Status delivered: ... containers`. The dashboard should show the host as **Reporting**.
 
-The downloaded setup script contains reporting credentials. Keep it and `collector.json` private. Do not commit generated installation files.
+The Compose package contains reporting credentials. Keep it and `collector.json` private. Do not commit generated installation files. A host left awaiting its first report has a **Continue setup** action.
 
 See the [installation guide](docs/deployment.md) for custom paths and maintenance.
 
@@ -111,9 +112,9 @@ See [development and validation](docs/development.md) for build output, test cov
 
 The product name is Crowsnest. Existing collector filenames, the `docker-dashboard` Compose project, container names, paths, and API routes remain compatible with existing installations.
 
-This version supports one collector installation per Docker daemon and up to 100 registered hosts. A host report supports up to 250 containers and 128 KiB. Rootless Docker requires manual socket-path and user-mapping adjustments. Credential recovery, token rotation, and host deletion do not have dashboard controls.
+This version supports one collector installation per Docker daemon and up to 100 registered hosts. A host report supports up to 250 containers and 128 KiB. Rootless Docker requires manual socket-path and user-mapping adjustments. Host management replaces reporting credentials; changing the platform service credential still requires updating every collector.
 
-The current product version is **0.2.1**. See the [changelog](CHANGELOG.md) and [versioning policy](docs/versioning.md).
+The current product version is **0.3.0**. See the [changelog](CHANGELOG.md) and [versioning policy](docs/versioning.md).
 
 GitHub stores source and runs checks. Pushing to this repository does not publish the dashboard; deployment remains managed through ChatGPT Sites.
 

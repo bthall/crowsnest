@@ -43,5 +43,7 @@ A custom installation path is passed to the setup script as its first argument. 
 - A report body no larger than 128 KiB.
 - Host names up to 64 characters, unique without regard to case.
 - Only the latest snapshot is retained for each host.
+- Activity retains up to 100 events per host within 30 days; older entries are hidden and pruned on the next history write.
+- Replacement reporting tokens have a ten-minute activation window. The current token remains valid until replacement activation.
 
 A partial collection is not sent as a successful report. Stale data remains visible and is marked stale.

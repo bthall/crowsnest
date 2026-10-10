@@ -37,21 +37,21 @@ For an existing Site, open its selected source through the Sites helper and pres
 
 ## Connect and verify a host
 
-Open the new dashboard while signed in, choose **Connect a host**, then follow [collector installation](deployment.md). Run the script as a normal user and confirm reporting from a real host.
+Open the new dashboard while signed in, choose **Connect a host**, then follow [collector installation](deployment.md). Inspect the Compose package, deploy it as a normal user, and confirm reporting from a real host.
 
 Before calling the setup complete, verify:
 
 - The access policy permits only the intended owner; anonymous dashboard and asset requests are denied.
 - Registration works on the generated origin and any active custom domain, while cross-origin registration is rejected.
 - Reporting requires both supported private-Site service access and the host's reporting token.
-- The browser and source contain no service credential; host configuration remains private.
+- The rendered page and JavaScript source contain no service credential. Only explicit private collector downloads carry credentials; host configuration remains private.
 - A first report appears, stale reporting is clear, and desktop/mobile and keyboard flows work.
 
 ## Readiness and future distribution
 
 Prepared now: clean source export, private per-owner deployment guide, no embedded runtime secrets, a versioned compatibility contract, synthetic screenshots, and CI security checks.
 
-Before broad distribution: choose a source license and delivery channel; document how an installing user obtains supported Sites service access; exercise the guide with a second independent owner; and add host deletion and token rotation/recovery controls.
+Before broad distribution: choose a source license and delivery channel; document how an installing user obtains supported Sites service access; and exercise the guide with a second independent owner. Host removal and staged reporting-token replacement are available. A versioned collector image with pairing is a possible next enrollment step; it needs a registry/distribution decision and a supported private-Site bootstrap design, rather than embedding long-lived credentials in a shell command.
 
 A shared Site for unrelated users requires a separate product design: server-side ownership on every host, snapshot, registration, and reporting path; isolation of storage keys; and reporting credentials scoped to each owner. The current host collection is shared within a Site. The browser identity header establishes identity, while the Sites access policy establishes membership.
 

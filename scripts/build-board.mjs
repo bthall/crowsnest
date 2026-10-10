@@ -1,6 +1,7 @@
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 let source=await readFile('worker/index.js','utf8');
 const {version}=JSON.parse(await readFile('package.json','utf8'));
+source=source.replaceAll('__APP_VERSION__',version);
 const lock=JSON.parse(await readFile('package-lock.json','utf8'));
 if(lock.version!==version || lock.packages[''].version!==version)throw new Error('Package and lockfile versions must match');
 for(const [placeholder,file] of [['__COLLECTOR_SOURCE__','worker/collector.py'],['__PROXY_SOURCE__','worker/proxy.cfg'],['__COMPOSE_SOURCE__','worker/compose.yaml'],['__SETUP_SOURCE__','worker/setup.sh'],['__BOARD_HTML__','worker/board.html'],['__BOARD_JS__','worker/board.js'],['__BOARD_CSS__','worker/board.css']]) {

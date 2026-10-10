@@ -13,6 +13,7 @@ const files = [
   'scripts/build-board.mjs', 'scripts/validate-artifact.mjs',
   'scripts/preview.mjs', 'scripts/export-site-source.mjs',
   'scripts/check-board.mjs', 'scripts/check-installer.mjs',
+  'scripts/check-enrollment.mjs',
   'scripts/check-secrets.mjs', 'scripts/run-checks.mjs',
   'worker/index.js', 'worker/board.html', 'worker/board.js', 'worker/board.css',
   'worker/collector.py', 'worker/proxy.cfg', 'worker/compose.yaml', 'worker/setup.sh',

@@ -20,7 +20,7 @@
   </header>
   <main>
     <div class="page-heading">
-      <div><h1>Docker hosts</h1><p id="fleet-summary">Loading your fleet…</p></div>
+      <div><h1>Docker fleet</h1><p id="fleet-summary">Loading your fleet…</p></div>
       <div class="actions">
         <button id="refresh" class="secondary"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 7a7 7 0 0 1 12-1l2 2M4 16l2 2a7 7 0 0 0 12-1"/></svg><span id="refresh-label">Refresh</span></button>
         <button id="add" class="primary"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Connect a host</button>
@@ -30,13 +30,17 @@
     <div class="workspace">
       <aside class="host-sidebar" aria-labelledby="hosts-heading">
         <div class="sidebar-heading"><h2 id="hosts-heading">Hosts</h2><span id="host-count" class="count">—</span></div>
+        <button id="fleet-view" class="host selected" aria-pressed="true"><span class="host-name"><strong>All hosts</strong></span><span class="host-state">Fleet overview</span></button>
         <nav id="hosts" class="host-list" aria-label="Docker hosts"><p>Loading hosts…</p></nav>
       </aside>
       <section id="containers" class="surface" aria-labelledby="host-title" tabindex="-1" aria-busy="true">
         <div class="surface-heading">
           <div><h2 id="host-title">Container status</h2><p id="engine" class="meta">Loading reports…</p></div>
-          <span id="host-status" class="status">Loading</span>
+          <div class="host-actions"><span id="host-status" class="status">Loading</span><button id="resume-setup" class="secondary" hidden>Continue setup</button><button id="manage-host" class="secondary" hidden>Manage host</button></div>
         </div>
+        <div class="view-switch" role="group" aria-label="Dashboard view"><button id="view-containers" aria-pressed="true">Containers</button><button id="view-activity" aria-pressed="false">Activity</button><button id="view-alerts" aria-pressed="false">Alerts <span id="alert-count" class="count">0</span></button></div>
+        <div id="activity-panel" class="event-panel" hidden><p class="panel-note">Recent changes, up to 100 events per host from the last 30 days. Tracking starts with this release.</p><p id="activity-status" role="status">Loading activity…</p><ol id="activity-list" class="event-list"></ol></div>
+        <div id="alerts-panel" class="event-panel" hidden><p class="panel-note">Current issues in your fleet. These alerts appear here; no external notifications are sent.</p><p id="alerts-status" role="status"></p><ul id="alerts-list" class="event-list"></ul></div>
         <dl class="summary" id="summary" hidden>
           <div><dt>Containers</dt><dd id="total">—</dd></div>
           <div><dt>Running</dt><dd id="running">—</dd></div>
@@ -62,21 +66,42 @@
     </div>
     <details class="setup-help" id="setup-help">
       <summary>Collector setup &amp; reporting</summary>
-      <div class="help-content"><p>Name your host and download its collector. Review the script, then run <code>bash docker-watch-setup.sh</code> as your normal user. The default installation is <code>/srv/docker/docker-dashboard-collector</code>.</p><p>Collectors send status every 30 seconds over HTTPS. No inbound ports are required. Reports older than two minutes are marked stale. Keep downloaded scripts private: they contain reporting credentials.</p></div>
+      <div class="help-content"><p>Connect a host with a standard Docker Compose package. Review the files, deploy under <code>/srv/docker/docker-dashboard-collector</code>, and wait here for its first report. The collector runs as your user; the restricted socket proxy runs as container root.</p><p>Reports arrive every 30 seconds over HTTPS. No inbound ports are required. Reports older than two minutes are marked stale. Keep <code>collector.json</code> private: it contains reporting credentials.</p></div>
     </details>
     <footer><span>Crowsnest <span class="version">v__APP_VERSION__</span> <span class="footer-divider">/</span> Status only</span><span id="poll-status">Refreshes every 15 seconds</span></footer>
   </main>
   <dialog id="setup" aria-labelledby="setup-title" aria-describedby="setup-description">
+    <div class="dialog-heading"><h2 id="setup-title">Connect a Docker host</h2><button type="button" id="cancel" class="close-button" aria-label="Close host setup"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+    <p id="setup-description">Deploy a small collector with Docker Compose, then confirm its first report.</p>
+    <ol class="setup-steps" aria-label="Enrollment progress"><li id="step-name" aria-current="step">Name host</li><li id="step-deploy">Deploy collector</li><li id="step-report">Confirm report</li></ol>
     <form id="setup-form">
-      <div class="dialog-heading"><h2 id="setup-title">Connect a Docker host</h2><button type="button" id="cancel" class="close-button" aria-label="Close host setup"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
-      <p id="setup-description">Give this host a name, then download its collector.</p>
       <label for="hostname">Host name</label>
       <input id="hostname" name="hostname" placeholder="e.g. hedwig" maxlength="64" required autocomplete="off" aria-describedby="hostname-help setup-message">
       <p class="input-help" id="hostname-help">Letters, numbers, spaces, dots, dashes, and underscores. Up to 64 characters.</p>
-      <div class="install-note"><strong>Run as your normal user</strong><p>Installs under <code>/srv/docker</code> and asks for sudo when needed. Keep the script private: it contains reporting credentials.</p></div>
-      <p id="setup-message" role="status" hidden></p>
-      <div class="dialog-actions"><button type="button" id="cancel-bottom" class="secondary">Cancel</button><button class="primary" type="submit" id="download">Download collector</button></div>
+      <div class="install-note"><strong>What runs on this host</strong><p>Two containers: a Python collector and a restricted HAProxy socket proxy. Status reads only. No published ports, container logs, or environment variables.</p></div>
+      <div class="dialog-actions"><button type="button" id="cancel-bottom" class="secondary">Cancel</button><button class="primary" type="submit" id="prepare">Prepare setup</button></div>
     </form>
+    <div id="setup-deploy" hidden>
+      <h3>Deploy on <span id="setup-host-name"></span></h3>
+      <p>The package contains readable Compose, Python, proxy, and configuration files. Review them before starting.</p>
+      <details class="package-details"><summary>Package contents &amp; permissions</summary><dl><dt>compose.yaml</dt><dd>Two services, read-only filesystems, dropped capabilities, no published ports.</dd><dt>collector.py / proxy.cfg</dt><dd>Status collection and the allowed Docker API reads.</dd><dt>collector.json</dt><dd>Private reporting credentials, file mode 0600.</dd></dl></details>
+      <a id="package-download" class="download-link" download="crowsnest-collector.tar">Download Compose package</a>
+      <p class="input-help">Keep this package private. Transfer it securely to the host if you downloaded it elsewhere.</p>
+      <label for="sudo-docker" class="checkbox-label"><input id="sudo-docker" type="checkbox" checked> My Docker commands require sudo</label>
+      <p>Run these commands as your normal user. If this directory already has a collector, use Manage host instead.</p>
+      <div class="command-heading"><strong>Deploy with Docker Compose</strong><button id="copy-deploy" type="button" class="secondary">Copy commands</button></div>
+      <pre><code id="deploy-commands"></code></pre>
+      <p id="setup-expiry" class="input-help"></p>
+      <div class="dialog-actions"><button id="wait-report" type="button" class="primary">I’ve started the collector</button></div>
+    </div>
+    <div id="setup-wait" hidden><h3 id="enrollment-title">Waiting for the first report</h3><p id="enrollment-status" role="status">Keep this open while your collector starts.</p><p id="enrollment-help">Reports arrive every 30 seconds. If nothing arrives after a minute, check the collector logs on the host.</p><pre><code id="log-command"></code></pre><div class="dialog-actions"><button type="button" id="back-deploy" class="secondary">Back to deployment</button><button type="button" id="finish-setup" class="primary">Close</button></div></div>
+    <p id="setup-message" role="status" hidden></p>
+  </dialog>
+  <dialog id="management" aria-labelledby="management-title"><div class="dialog-heading"><h2 id="management-title">Manage host</h2><button id="close-management" class="close-button" aria-label="Close host management"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+    <form id="rename-form"><label for="rename-host">Host name</label><input id="rename-host" maxlength="64" required autocomplete="off"><div class="dialog-actions"><button type="submit" id="rename-save" class="primary">Save name</button></div></form>
+    <details class="management-section"><summary>Replace reporting token</summary><p>Prepare a new configuration and apply it on the host within ten minutes. The current token stays valid until the first successful report using the replacement. This replaces the host token; platform service access is unchanged.</p><button id="rotate-token" class="secondary">Prepare new credentials</button><div id="rotation-result" hidden><a id="config-download" class="download-link" download="collector.json">Download collector.json</a><pre><code id="rotation-commands"></code></pre><p id="rotation-status" role="status"></p></div></details>
+    <details class="management-section"><summary>Remove host</summary><p>Removes this host, its snapshot, and activity. Reporting credentials stop working. Containers on the host keep running; stop the collector there with <code>docker compose down</code>.</p><label for="remove-name" id="remove-label">Enter the host name to confirm</label><input id="remove-name" autocomplete="off"><button id="remove-host" class="danger" disabled>Remove host</button></details>
+    <p id="management-message" role="status" hidden></p>
   </dialog>
 </body>
 </html>

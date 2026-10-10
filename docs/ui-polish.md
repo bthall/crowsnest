@@ -20,6 +20,10 @@ CSS and JavaScript are separate private assets. Container data uses DOM text API
 
 ## Verification
 
+Version 0.3.0 extends the same visual direction with fleet containers, activity/alerts, and focused host-management controls. Enrollment uses naming, inspectable Compose deployment, and first-report confirmation; setup can resume after a lost download. The Impeccable context launcher was unavailable because it was not executable, so this pass used the existing DESIGN.md and the skill's onboarding/craft guidance directly.
+
+Browser verification for 0.3.0 uses synthetic API responses for enrollment and host mutations. It covers package downloads, first-report confirmation, continuation, staged replacement feedback, exact-name removal confirmation, renaming, fleet search, activity/alerts, session errors, hostile text, and desktop/mobile/dialog axe checks. Backend tests separately validate the generated package and real Worker storage/credential behavior through doubles. These checks do not register, rename, rotate, or remove production hosts.
+
 Browser checks covered search by name/image, attention filtering and clearing, stale/empty/waiting states, registration errors, permission recovery, keyboard setup and focus restoration, focus preservation during polling, long names/images, and HTML-like container text. Layouts at 320, 390, 850, and 1440 CSS pixels had no page overflow. axe-core reported no violations for its selected WCAG 2 A/AA and WCAG 2.1 AA checks on desktop, mobile, and the setup dialog.
 
 The Impeccable detector could not resolve the absolute asset URL to the source stylesheet and consequently reported a flat-heading warning. Browser-computed styles and visual inspection verified the actual hierarchy. The detector does not establish design quality or accessibility compliance.

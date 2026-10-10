@@ -11,10 +11,13 @@ Treat the dashboard as an operating tool. Keep the crow mark, slate surfaces, wa
 
 - Hosts at the left on desktop, horizontally scrollable on phones.
 - Selected-host summary attached to its container table.
-- Search matches names and images. The attention filter means unhealthy, restarting, or dead.
+- All hosts is the default fleet view; host selection scopes containers, activity, and alerts.
+- Search matches container names, images, and host names in fleet view. The attention filter means unhealthy, restarting, or dead.
 - Attention rows sort first, then names alphabetically.
 - Preserve host-button focus during polling and help disclosure while reading.
-- Use a focused setup dialog with a named field, useful validation, and download feedback.
+- Use a focused enrollment dialog with naming, inspectable Compose deployment, and first-report confirmation. Keep deployment steps available if a report is delayed; allow an awaiting host to continue setup.
+- Explain Docker access and credentials before downloads. Keep secrets out of commands and rendered text. The downloaded archive is private and contains the actual configuration.
+- Host removal requires an exact-name confirmation. Reporting-token replacement leaves the current token usable until successful activation.
 - Keep setup explanations in contextual help and the first-run state.
 
 ## Tokens and accessibility

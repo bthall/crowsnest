@@ -123,7 +123,7 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
       if(!env.BUCKET)return json({error:'Storage unavailable'},503);
       if(path==='/api/notifications' && request.method==='GET')return json(await notificationStatus(env));
       if(path==='/api/notifications/sweep' && request.method==='GET') {
-        const result=await env.BUCKET.get('notifications/sweep.json');return json(result?await result.json():{at:null});
+        const result=await env.BUCKET.get('notifications/sweep.json'), delivery=await env.BUCKET.get('notifications/delivery.json');return json({...result?await result.json():{at:null},lastDeliveryError:delivery?(await delivery.json()).lastError:null});
       }
       if(!sweepAuth && !sameOrigin(request))return json({error:'Invalid origin'},403);
       if(sweep)return json(await sweepNotifications(env));
@@ -141,7 +141,7 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
         if(Date.now()-Date.parse(prior.at)<60000)return json({error:'Wait one minute before sending another test'},429);
         await env.BUCKET.put('notifications/test.json',JSON.stringify({at:new Date().toISOString()}));
         try {await publishNtfy(env,destination,'Crowsnest is connected. Subscribe to this topic in ntfy to receive fleet alerts.','Crowsnest · Test notification');}
-        catch {return json({error:'ntfy did not accept the test. Check delivery status, server access, and the runtime token.'},502);}
+        catch(error) {return json({error:'ntfy did not accept the test: '+error.message+'. Check server access and the runtime token.'},502);}
         return json({ok:true});
       }
       return json({error:'Not found'},404);

@@ -35,7 +35,7 @@ try {
   await deliver();assert.equal(requests.length,0);
   report.containers[0].health='unhealthy';await deliver();assert.equal(requests.length,1);
   const sent=JSON.parse(requests[0].options.body);
-  assert.equal(requests[0].url,'https://ntfy.example.com/');assert.equal(requests[0].options.redirect,'error');
+  assert.equal(requests[0].url,'https://ntfy.example.com/');assert.equal(requests[0].options.redirect,'manual');
   assert.equal(requests[0].options.headers.Authorization,'Bearer '+env.NTFY_TOKEN);assert.equal(sent.priority,4);assert.match(sent.message,/web: running\/unhealthy/);assert.equal(sent.click,env.SITE_ORIGIN);
   await deliver();await deliver();assert.equal(requests.length,1,'Repeated unhealthy reports are deduplicated');
   resetBackoff(id);report.containers[0].health='healthy';await deliver();assert.equal(requests.length,2);assert.match(JSON.parse(requests.at(-1).options.body).message,/Cleared:/);

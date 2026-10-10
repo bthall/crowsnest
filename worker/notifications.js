@@ -30,20 +30,27 @@ async function publishNtfy(env,destination,message,title,priority=3) {
   const authorization=env.NTFY_TOKEN?{Authorization:'Bearer '+env.NTFY_TOKEN}:{};
   const click=dashboardOrigin(env.DASHBOARD_ORIGIN)||dashboardOrigin(env.SITE_ORIGIN);
   let response;
+  const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),5000);
   try {
-    response=await fetch(destination.origin+'/',{method:'POST',redirect:'error',signal:AbortSignal.timeout(5000),headers:{'Content-Type':'application/json',...authorization},body:JSON.stringify({topic:destination.topic,title,message,priority,tags:[priority===4?'warning':'white_check_mark'],...(click?{click}: {})})});
+    response=await fetch(destination.origin+'/',{method:'POST',redirect:'manual',signal:controller.signal,headers:{'Content-Type':'application/json',...authorization},body:JSON.stringify({topic:destination.topic,title,message,priority,tags:[priority===4?'warning':'white_check_mark'],...(click?{click}: {})})});
     if(!response.ok)throw new Error('HTTP '+response.status);
     // An HTTP success alone does not prove that ntfy accepted the message.
     const acknowledgement=await readJson(response,16384);
     if(acknowledgement.event!=='message' || acknowledgement.topic!==destination.topic || typeof acknowledgement.id!=='string')throw new Error('Invalid acknowledgement');
     await env.BUCKET.put('notifications/delivery.json',JSON.stringify({lastSuccessAt:new Date().toISOString(),lastError:null}));
   }catch(error) {
-    const reason=/^HTTP \d{3}$/.test(error.message)?error.message:'Connection or acknowledgement failed';
+    const reason=/^HTTP \d{3}$/.test(error.message)?error.message:error.message==='Invalid acknowledgement'?error.message:'Connection or acknowledgement failed';
+    console.error('ntfy delivery failed',reason,error?.name);
+    if(reason==='Connection or acknowledgement failed') {
+      let detail=String(error?.message||'Unknown transport error');
+      for(const secret of [env.NTFY_TOKEN,env.COLLECTOR_SERVICE_TOKEN])if(secret)detail=detail.replaceAll(secret,'[redacted]');
+      console.error('ntfy transport detail',detail.slice(0,240));
+    }
     const old=await env.BUCKET.get('notifications/delivery.json');
     const previous=old?await old.json():{};
     await env.BUCKET.put('notifications/delivery.json',JSON.stringify({...previous,lastError:reason,lastFailureAt:new Date().toISOString()}));
     throw new Error(reason);
-  }
+  }finally{clearTimeout(timer);}
 }
 async function notifyHost(env,host,snapshot,settings,now=Date.now()) {
   const destination=ntfyDestination(env.NTFY_URL);

@@ -3,6 +3,13 @@
 Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 
+## [0.4.1] - 2026-10-10
+
+### Fixed
+
+- Portable server-side request cancellation and explicit redirect rejection for hosted ntfy publishing.
+- Sanitized delivery errors in test responses, sweep readback, and server logs to diagnose hosted connectivity.
+
 ## [0.4.0] - 2026-10-10
 
 ### Added
@@ -79,3 +86,5 @@ Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 [0.1.0]: https://github.com/bthall/crowsnest/tree/5efb8b44c1338f5365ac1e400fe0794cbc2431f0
 
 [0.4.0]: https://github.com/bthall/crowsnest/compare/7ca8023a294a21a45bec7a546075a9f45b86b42e...main
+
+[0.4.1]: https://github.com/bthall/crowsnest/compare/21e6fdf74ee24853b5116a63fad97714c587f6fa...main

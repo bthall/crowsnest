@@ -9,8 +9,8 @@ delete env.SUDO_UID;
 delete env.SUDO_GID;
 let code=0;
 try {
-  for(const script of ['scripts/check-secrets.mjs','scripts/validate-artifact.mjs','scripts/check-board.mjs','scripts/check-enrollment.mjs','scripts/check-notifications.mjs','scripts/check-installer.mjs']) {
-    const result=spawnSync(process.execPath,[script],{env,stdio:'inherit'});
+  for(const script of ['scripts/check-secrets.mjs','scripts/validate-artifact.mjs','scripts/check-board.mjs','scripts/check-enrollment.mjs','scripts/check-notifications.mjs','scripts/check-notifier.py','scripts/check-installer.mjs']) {
+    const result=spawnSync(script.endsWith('.py')?'python3':process.execPath,[script],{env:{...env,PYTHONDONTWRITEBYTECODE:'1'},stdio:'inherit'});
     if(result.error)throw result.error;
     if(result.status!==0){code=result.status??1;break;}
   }

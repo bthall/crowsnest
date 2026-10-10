@@ -9,7 +9,7 @@ rules:
       - pattern: setTimeout("...", ...)
       - pattern: setInterval("...", ...)
     paths:
-      include: [/worker/**]
+      include: [/worker/**, /notifier/**]
   - id: crowsnest-safe-dom
     languages: [javascript]
     severity: ERROR
@@ -21,7 +21,7 @@ rules:
       - pattern: document.write(...)
       - pattern: document.writeln(...)
     paths:
-      include: [/worker/**]
+      include: [/worker/**, /notifier/**]
   - id: crowsnest-no-shell-execution
     languages: [javascript]
     severity: ERROR
@@ -32,7 +32,7 @@ rules:
       - pattern: $MODULE.exec(...)
       - pattern: $MODULE.execSync(...)
     paths:
-      include: [/worker/**]
+      include: [/worker/**, /notifier/**]
   - id: crowsnest-python-no-code-execution
     languages: [python]
     severity: ERROR
@@ -43,7 +43,7 @@ rules:
       - pattern: os.system(...)
       - pattern: subprocess.$METHOD(..., shell=True, ...)
     paths:
-      include: [/worker/**]
+      include: [/worker/**, /notifier/**]
   - id: crowsnest-verify-tls
     languages: [python]
     severity: ERROR
@@ -54,11 +54,11 @@ rules:
       - pattern: $CONTEXT.verify_mode = ssl.CERT_NONE
       - pattern: requests.$METHOD(..., verify=False, ...)
     paths:
-      include: [/worker/**]
+      include: [/worker/**, /notifier/**]
   - id: crowsnest-no-privileged-container
     languages: [generic]
     severity: ERROR
     message: Collector containers must not run in privileged mode.
     pattern-regex: 'privileged:\s*true'
     paths:
-      include: [/worker/compose.yaml]
+      include: [/worker/compose.yaml, /notifier/compose.yaml]

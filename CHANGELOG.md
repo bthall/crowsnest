@@ -3,6 +3,14 @@
 Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 
+## [0.4.2] - 2026-10-10
+
+### Fixed
+
+- Optional restricted Docker sweep runner under `/srv/docker/crowsnest-notifier` for timely stale-host checks on Sites, whose cloud scheduling has an hourly minimum.
+- CI coverage for private unattended writer access, TLS/redirect handling, bounded replies, and persisted readback.
+- Documented checker/ntfy host outage limits and the actual supported schedule cadence.
+
 ## [0.4.1] - 2026-10-10
 
 ### Fixed
@@ -88,3 +96,5 @@ Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 [0.4.0]: https://github.com/bthall/crowsnest/compare/7ca8023a294a21a45bec7a546075a9f45b86b42e...main
 
 [0.4.1]: https://github.com/bthall/crowsnest/compare/21e6fdf74ee24853b5116a63fad97714c587f6fa...main
+
+[0.4.2]: https://github.com/bthall/crowsnest/compare/6b3897592520d5ae8fb8f021eab24d88a4398b70...main

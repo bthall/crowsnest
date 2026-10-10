@@ -1,7 +1,7 @@
 # Screenshot provenance
 
 The README images are browser captures of the Crowsnest `0.4.0` interface.
-The 0.4.1 transport fix preserves this interface.
+The 0.4.1 transport fix and 0.4.2 background runner preserve this interface.
 All hosts, container names, images, counts, and report ages are fictional examples from `scripts/preview.mjs`. The captures contain no production fleet data, account details, URLs with credentials, or downloaded setup scripts.
 
 - Desktop: Chromium, 1440 × 1120 viewport, full page.

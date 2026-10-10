@@ -1,0 +1,20 @@
+name: crowsnest-notifier
+services:
+  notifier:
+    image: python:3.13-alpine
+    container_name: crowsnest-notifier
+    restart: unless-stopped
+    user: "${NOTIFIER_UID:?Set NOTIFIER_UID}:${NOTIFIER_GID:?Set NOTIFIER_GID}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 32
+    mem_limit: 64m
+    cpus: 0.25
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ./notifier.py:/app/notifier.py:ro
+      - ./notifier.json:/config/notifier.json:ro
+    command: [python, /app/notifier.py]

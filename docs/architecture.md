@@ -27,6 +27,7 @@ In-app alerts derive from the latest reports: stale hosts, enrollment awaiting a
 ## Source layout
 
 - `worker/notifications.js`: server-side ntfy transitions, acknowledgements, retry state, and sweeps.
+- `notifier/`: optional standard-library Python runner and restricted Compose deployment for minute sweeps.
 - `worker/index.js`: routes, registration, report validation, and installer generation.
 - `worker/board.html`, `board.js`, `board.css`: dashboard structure, interactions, and styles.
 - `worker/collector.py`: outbound status collector.

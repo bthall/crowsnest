@@ -29,7 +29,7 @@ The Worker verifies ntfy's message acknowledgement before recording success. **A
 
 Collector reports process their own host's alerts. Stale hosts and pending deliveries also need an independent sweep, particularly if every collector stops. The browser is not a scheduler.
 
-For ChatGPT Sites, use one Site-linked cloud schedule named **Check Crowsnest alerts**, every five minutes in the owner's timezone. Inspect `get_site.automations` first and reuse a matching schedule; preserve a paused schedule. If scheduling is unavailable, configure an external timer with the same endpoint and retain its credentials privately. Ordinary alert checks do not redeploy the Site. Other Worker deployments may attach a platform cron trigger to the exported `scheduled` handler.
+ChatGPT Sites cloud schedules currently permit no more than one run per hour. For timely stale-host alerts, use the optional Docker runner below, or another external timer. An hourly Site-linked task is suitable only if that delay is acceptable. Inspect `get_site.automations` first, reuse a matching task, and preserve a paused task. Ordinary alert checks do not redeploy the Site. Other Worker deployments may attach a platform cron trigger to the exported `scheduled` handler.
 
 ### Saved instructions for the scheduled updater
 
@@ -42,7 +42,32 @@ These instructions are part of the reviewed source. The runtime supplies the sel
 
 The service credential authorizes notification sweep/readback and the rate-limited test route, in addition to private dispatch. It cannot read dashboard data or change notification settings without a viewer session. Keep it private, including in every collector configuration. No ntfy token is required by the scheduler.
 
-With five-minute sweeps, a host becoming stale is normally detected between two and seven minutes after its last report, plus cloud-task execution and delivery time. Check **Last background check** in Alerts to detect a paused or failing schedule. A failed/absent schedule leaves reporting-time container alerts working but stale-host detection incomplete.
+With the Docker runner's one-minute sweeps, a host becoming stale is normally detected between two and three minutes after its last report, plus delivery time. An hourly cloud task can delay it by over an hour. Check **Last background check** in Alerts to detect a paused or failing schedule. A failed/absent schedule leaves reporting-time container alerts working but stale-host detection incomplete.
+
+## Optional Docker runner
+
+`notifier/notifier.py` uses only Python's standard library. It checks once a minute, verifies each POST with a persisted GET readback, denies redirects, retains TLS verification, and logs only counts/timestamps or error types. It needs no ntfy credential and publishes no messages itself.
+
+Deploy the reviewed `notifier/compose.yaml` and `notifier/notifier.py` to `/srv/docker/crowsnest-notifier`. Create the directory as your normal user using the same ownership pattern as collector setup:
+
+```bash
+sudo install -d -m 0700 -o "$(id -u)" -g "$(id -g)" /srv/docker/crowsnest-notifier
+cd /srv/docker/crowsnest-notifier
+# Copy the two reviewed source files here as compose.yaml and notifier.py.
+(umask 077; printf 'NOTIFIER_UID=%s\nNOTIFIER_GID=%s\n' "$(id -u)" "$(id -g)" > .env)
+```
+
+Using supported service access for your own Site, securely create `notifier.json` (mode 0600) with keys `url` (the generated HTTPS Site origin) and `serviceToken` (its supported service bearer). This file is private and ignored by Git. Configure it through a private file transfer or agent stdin, keeping the bearer out of shell arguments/history. Do not reuse credentials from another owner's deployment.
+
+```bash
+sudo docker compose config --quiet
+sudo docker compose up -d
+sudo docker compose logs --tail=20 notifier
+```
+
+The container is named `crowsnest-notifier`, runs as the configured UID/GID, has a read-only filesystem, dropped capabilities, resource limits, and no published ports. Files stay owned by your normal user. After rotating the Site service credential, update this private file and recreate the notifier. Stop it with `docker compose down`; dashboard notification settings do not stop the checker.
+
+Place the checker on an available host. A checker on a monitored host cannot detect that host's failure while it is down. Likewise, a self-hosted ntfy server cannot deliver notifications while its own host is down. Use an independently hosted checker and ntfy server if alerts during a complete local outage are required. Failures coalesce and retry once services return; this setup is not an independent uptime monitor.
 
 ## Troubleshooting
 

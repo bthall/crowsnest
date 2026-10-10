@@ -18,6 +18,7 @@ The socket proxy permits only Docker version, container list, and container insp
 
 - Configure Site secrets through the hosting platform, not source files or the hosting manifest.
 - Keep downloaded Compose packages, legacy setup scripts, and `collector.json` private. They contain reporting credentials.
+- Keep `notifier.json` private as well; it holds the privileged Site service credential.
 - Keep installation directories at 0700 and credential files at 0600.
 - Use synthetic credentials in examples and automated tests.
 - Exclude generated installs, environment files, keys, and credential-bearing diagnostics from Git.

@@ -23,12 +23,6 @@ Omit sudo if your account has Docker access. Redact credentials before sharing a
 | Invalid origin during registration | Access registration through the same origin as the dashboard page. Confirm the deployed version supports the attached custom domain. |
 | Directory or named container already exists | Inspect the existing installation. The scripts deliberately avoid overwriting a target or colliding with fixed container names. |
 
-## Migration failed
-
-The migration script validates the new configuration and pulls images before stopping the old project. If the new project fails to start, it attempts to restart the original project. Check which project is running before retrying; the destination files remain for inspection, and the original files remain available for rollback.
-
-Do not register the host again merely to rename or move its installation. A migration should preserve its existing `collector.json`, host ID, and tokens.
-
 ## Credentials lost
 
 There is no credential-recovery UI. Contact the owner before changing storage or secrets. A new registration requires a unique name and leaves the old registration present until it is removed through storage administration.

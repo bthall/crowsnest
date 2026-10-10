@@ -1,22 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
-mode=__INSTALL_MODE__
-source_dir=''
-if [[ "$mode" == update ]]; then
-    if [[ $# -lt 1 || $# -gt 2 ]]; then
-        echo 'Usage: bash docker-watch-update.sh EXISTING_DIRECTORY [TARGET_DIRECTORY]' >&2
-        exit 1
-    fi
-    source_dir="$(cd -- "$1" && pwd -P)"
-    target="${2:-/srv/docker/docker-dashboard-collector}"
-else
-    if [[ $# -gt 1 ]]; then
-        echo 'Usage: bash docker-watch-setup.sh [TARGET_DIRECTORY]' >&2
-        exit 1
-    fi
-    target="${1:-/srv/docker/docker-dashboard-collector}"
+if [[ $# -gt 1 ]]; then
+    echo 'Usage: bash docker-watch-setup.sh [TARGET_DIRECTORY]' >&2
+    exit 1
 fi
+target="${1:-/srv/docker/docker-dashboard-collector}"
 [[ "$target" == /* ]] || target="$PWD/$target"
 if [[ -e "$target" || -L "$target" ]]; then
     echo "Directory already exists; refusing to overwrite: $target" >&2
@@ -48,11 +37,6 @@ for container in docker-dashboard-collector docker-dashboard-socket-proxy; do
         exit 1
     fi
 done
-if [[ -n "$source_dir" ]]; then
-    for file in compose.yaml collector.json; do
-        [[ -f "$source_dir/$file" ]] || { echo "Missing $file in $source_dir" >&2; exit 1; }
-    done
-fi
 parent="$(dirname -- "$target")"
 if [[ ! -d "$parent" ]]; then
     if ! mkdir -p -- "$parent" 2>/dev/null; then
@@ -69,9 +53,6 @@ else
 fi
 cd -- "$target"
 __WRITE_FILES__
-if [[ -n "$source_dir" ]]; then
-    cp -- "$source_dir/collector.json" collector.json
-fi
 printf 'COLLECTOR_UID=%s\nCOLLECTOR_GID=%s\n' "$owner_uid" "$owner_gid" > .env
 chmod 0600 collector.json .env
 chmod 0644 compose.yaml collector.py proxy.cfg
@@ -80,15 +61,8 @@ if [[ "$EUID" == 0 ]]; then
 fi
 "${DOCKER[@]}" compose config --quiet
 "${DOCKER[@]}" compose pull
-if [[ -n "$source_dir" ]]; then
-    "${DOCKER[@]}" compose --project-directory "$source_dir" -f "$source_dir/compose.yaml" down
-fi
 if ! "${DOCKER[@]}" compose up -d; then
     echo "Startup failed. Installation files are retained at $target." >&2
-    if [[ -n "$source_dir" ]]; then
-        "${DOCKER[@]}" compose down || true
-        "${DOCKER[@]}" compose --project-directory "$source_dir" -f "$source_dir/compose.yaml" up -d || true
-    fi
     exit 1
 fi
 printf '\nCollector installed at %s\n' "$target"
@@ -96,6 +70,3 @@ printf 'Container names: docker-dashboard-collector, docker-dashboard-socket-pro
 printf 'Check reports with: cd %q && ' "$target"
 printf '%q ' "${DOCKER[@]}"
 printf 'compose logs -f collector\n'
-if [[ -n "$source_dir" ]]; then
-    printf 'Existing host credentials were preserved. Original files remain at %s\n' "$source_dir"
-fi

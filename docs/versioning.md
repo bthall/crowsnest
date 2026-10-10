@@ -1,0 +1,28 @@
+# Versioning and releases
+
+Crowsnest uses [Semantic Versioning 2.0.0](https://semver.org/): `MAJOR.MINOR.PATCH`.
+`package.json` is the source of truth. The lockfile and dashboard footer use the same version.
+
+## Compatibility contract
+
+Compatibility covers the collector report format and ingestion route, collector configuration keys, installation arguments and filenames, Compose service names, and stored host records. A visual change does not require reinstalling collectors. Site publication numbers identify hosted builds and are separate from product versions.
+
+During initial development (`0.x.y`), a minor release may introduce a documented incompatible change. Patch releases contain compatible fixes. An incompatible change must include release notes and instructions for affected users. The retirement of the one-time relocation endpoint is part of `0.2.0`; existing collectors continue reporting through the same ingestion route.
+
+After `1.0.0`, increment:
+
+- **PATCH** for compatible bug fixes, security fixes, and visual corrections.
+- **MINOR** for compatible features and documented deprecations.
+- **MAJOR** for changes requiring users to change collector configuration, installation, API use, or stored data.
+
+Use `-rc.1`, `-rc.2`, and so on for release candidates. A released version and its Git tag are immutable.
+
+## Release procedure
+
+1. Update the version with `npm version <version> --no-git-tag-version`. Update `CHANGELOG.md` with the actual changes and date.
+2. Run `npm run check`, the CI security scanners, and the relevant browser/collector checks. Require the **Checks** and **Security** workflows to pass on the release commit.
+3. For UI changes, refresh the README captures using synthetic data and record their provenance.
+4. Push reviewed source. Create the annotated Git tag `v<version>` on that exact commit after CI succeeds, then create release notes from the changelog.
+5. Publish the matching source and artifact through ChatGPT Sites. Preserve the selected Site's identity and access policy. Record the product version, Git SHA, and hosted version together.
+
+GitHub publication and Site deployment are separate steps. There is no automatic production deployment or tag creation in CI. Set branch rules to require the workflows when repository plan support permits; workflow files alone do not prevent merging a failing change.

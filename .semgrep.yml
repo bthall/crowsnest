@@ -1,0 +1,64 @@
+rules:
+  - id: crowsnest-no-dynamic-javascript
+    languages: [javascript]
+    severity: ERROR
+    message: Use structured data and ordinary functions instead of string-to-code execution.
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+      - pattern: setTimeout("...", ...)
+      - pattern: setInterval("...", ...)
+    paths:
+      include: [/worker/**]
+  - id: crowsnest-safe-dom
+    languages: [javascript]
+    severity: ERROR
+    message: Render host and container data with textContent and DOM nodes.
+    pattern-either:
+      - pattern: $EL.innerHTML = $VALUE
+      - pattern: $EL.outerHTML = $VALUE
+      - pattern: $EL.insertAdjacentHTML(...)
+      - pattern: document.write(...)
+      - pattern: document.writeln(...)
+    paths:
+      include: [/worker/**]
+  - id: crowsnest-no-shell-execution
+    languages: [javascript]
+    severity: ERROR
+    message: Hosted application code must not execute shell commands.
+    pattern-either:
+      - pattern: exec(...)
+      - pattern: execSync(...)
+      - pattern: $MODULE.exec(...)
+      - pattern: $MODULE.execSync(...)
+    paths:
+      include: [/worker/**]
+  - id: crowsnest-python-no-code-execution
+    languages: [python]
+    severity: ERROR
+    message: The collector must not evaluate code or invoke a shell.
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: exec(...)
+      - pattern: os.system(...)
+      - pattern: subprocess.$METHOD(..., shell=True, ...)
+    paths:
+      include: [/worker/**]
+  - id: crowsnest-verify-tls
+    languages: [python]
+    severity: ERROR
+    message: Keep TLS certificate verification enabled for collector reports.
+    pattern-either:
+      - pattern: ssl._create_unverified_context(...)
+      - pattern: $CONTEXT.check_hostname = False
+      - pattern: $CONTEXT.verify_mode = ssl.CERT_NONE
+      - pattern: requests.$METHOD(..., verify=False, ...)
+    paths:
+      include: [/worker/**]
+  - id: crowsnest-no-privileged-container
+    languages: [generic]
+    severity: ERROR
+    message: Collector containers must not run in privileged mode.
+    pattern-regex: 'privileged:\s*true'
+    paths:
+      include: [/worker/compose.yaml]

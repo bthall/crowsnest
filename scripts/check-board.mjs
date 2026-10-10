@@ -13,16 +13,20 @@ const env={SITE_ORIGIN:'https://board.example',COLLECTOR_SERVICE_TOKEN:'test-ser
 const viewer={'oai-authenticated-user-id':'owner'};
 const call=(path,options={})=>worker.fetch(new Request(env.SITE_ORIGIN+path,options),env);
 assert.equal((await call('/')).status,401);
-assert.equal((await call('/collector-update.sh')).status,401);
-const update=await call('/collector-update.sh',{headers:viewer});
-assert.equal(update.status,200);
-const updateScript=await update.text();
-assert.ok(!updateScript.includes(env.COLLECTOR_SERVICE_TOKEN));
-await writeFile(testFile('docker-watch-test-update.sh'),updateScript);
 assert.equal((await call('/',{headers:viewer})).status,200);
 const brandedPage=await (await call('/',{headers:viewer})).text();
 assert.match(brandedPage,/<title>Crowsnest/);
 assert.match(brandedPage,/src="\/assets\/crowsnest-mark\.png"/);
+const csp=(await call('/',{headers:viewer})).headers.get('Content-Security-Policy');
+assert.ok(!csp.includes('unsafe-inline')&&!csp.includes('unsafe-eval'));
+for(const [path,type] of [['/assets/board.js','text/javascript'],['/assets/board.css','text/css']]) {
+  assert.equal((await call(path)).status,401);
+  const asset=await call(path,{headers:viewer});
+  assert.equal(asset.status,200);
+  assert.ok(asset.headers.get('Content-Type').startsWith(type));
+}
+assert.ok(!brandedPage.includes('__APP_VERSION__'));
+
 const logo=await call('/assets/crowsnest-mark.png',{headers:viewer});
 assert.equal(logo.status,200);
 assert.equal(logo.headers.get('Content-Type'),'image/png');
@@ -49,7 +53,7 @@ assert.equal((await call(path,{method:'POST',headers:{Authorization:'Bearer '+co
 assert.equal((await call(path,{method:'POST',headers:{Authorization:'Bearer '+config.hostToken},body:'x'.repeat(131073)})).status,400);
 assert.equal((await call('/api/hosts',{method:'POST',headers:{...viewer,Origin:env.SITE_ORIGIN},body:JSON.stringify({name:'hedwig'})})).status,409);
 // Custom domains must register hosts while retaining the configured collector endpoint.
-const customOrigin='https://docker-dashboard.pingspan.com';
+const customOrigin='https://crowsnest.example.net';
 const registerAt=(origin,headers,name)=>worker.fetch(new Request(origin+'/api/hosts',{method:'POST',headers,body:JSON.stringify({name})}),env);
 for(const origin of [env.SITE_ORIGIN,customOrigin]) {
   for(const invalidOrigin of ['https://untrusted.example','null',origin===customOrigin?env.SITE_ORIGIN:customOrigin]) {

@@ -4,8 +4,7 @@ dist/
 .env.*
 !.env.example
 collector*.json
-docker-watch-setup*.sh
-docker-watch-update*.sh
+docker-watch-*.sh
 docker-watch-*/
 *.pem
 *.key
@@ -20,3 +19,6 @@ docker-watch-*/
 id_rsa
 id_ecdsa
 id_ed25519
+output/
+.playwright-cli/
+.playwright/

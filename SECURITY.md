@@ -22,10 +22,12 @@ The socket proxy permits only Docker version, container list, and container insp
 - Use synthetic credentials in examples and automated tests.
 - Exclude generated installs, environment files, keys, and credential-bearing diagnostics from Git.
 
-The tracked `.openai/hosting.json` contains a non-secret Site identifier and an R2 binding name. It contains no runtime credentials. The source image and branding brief contain no service credentials.
+The tracked `.openai/hosting.json` contains a non-secret Site identifier and an R2 binding name. It contains no runtime credentials. Clean exports omit this Site identity and all runtime settings. README screenshots contain only fictional data.
 
 ## Checks and incident handling
 
-The local/CI secret check detects common credential patterns and generated credential file names in tracked source. The `--history` mode additionally checks local Git blob history. These checks complement manual review; they do not detect every possible secret format.
+The local secret check detects common credential patterns and generated credential file names in tracked source. The `--history` mode additionally checks local Git blob history. CI also runs Gitleaks across complete Git history with redacted output, focused Semgrep application rules, and npm audit. These checks complement manual review; they do not detect every possible secret format.
 
 If a credential is exposed, revoke or rotate it before treating deletion as remediation. Updating the platform service credential requires updating every collector. There is currently no token-rotation UI. Coordinate token revocation and storage changes with the repository owner and verify reporting afterward.
+
+The dashboard serves JavaScript and CSS as authenticated assets and blocks inline scripts and styles with CSP. External container fields render as text through DOM APIs. Separate owners should deploy separate private Sites; the current host collection has one Site-level owner boundary.

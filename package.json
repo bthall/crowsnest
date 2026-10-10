@@ -1,6 +1,6 @@
 {
   "name": "crowsnest",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Private Docker dashboard with a restricted outbound collector for each host.",
   "type": "module",
@@ -10,6 +10,8 @@
   "scripts": {
     "build": "node scripts/build-board.mjs",
     "test": "node scripts/run-checks.mjs",
-    "check": "npm run build && npm test"
+    "check": "npm run build && npm test",
+    "preview": "node scripts/preview.mjs",
+    "export:site": "node scripts/export-site-source.mjs"
   }
 }

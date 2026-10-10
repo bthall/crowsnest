@@ -29,9 +29,9 @@ The hosting manifest retains the existing Site's identifier and declares the `BU
 
 The installer writes `COLLECTOR_UID` and `COLLECTOR_GID` to the deployment's private `.env` file. They match the file owner, including the invoking user when running through sudo. The socket proxy runs as container root with dropped capabilities; the collector runs as the configured UID/GID.
 
-`collector.json` contains the dashboard URL, host ID, host token, and platform service token. It is generated during registration or preserved during migration. It is not a source file, and it must not be committed. The repository has no real sample credentials.
+`collector.json` contains the dashboard URL, host ID, host token, and platform service token. It is generated during registration. It is not a source file, and it must not be committed. The repository has no real sample credentials.
 
-A custom installation path is passed to the setup script as its first argument or the migration script as its second argument. Rootless Docker is not automatically configured; adjust the socket mount and user mapping for that daemon before running the collector.
+A custom installation path is passed to the setup script as its first argument. Rootless Docker is not automatically configured; adjust the socket mount and user mapping for that daemon before running the collector.
 
 ## Current limits
 

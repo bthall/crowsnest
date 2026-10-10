@@ -8,6 +8,15 @@
 
 Crowsnest is a private dashboard for Docker host and container status. A small outbound collector on each host sends reports to a dashboard hosted through ChatGPT Sites. It gives you one place to check container state, health, uptime, and restart counts.
 
+![Crowsnest dashboard showing fictional Docker hosts and container status](docs/screenshots/dashboard-desktop.png)
+
+*Actual UI with fictional host data. [Screenshot provenance](docs/screenshots/README.md).*
+
+<details>
+<summary>Mobile view</summary>
+<p><img src="docs/screenshots/dashboard-mobile.png" alt="Crowsnest on a narrow screen, with host selection and container status" width="390"></p>
+</details>
+
 ## Features
 
 - Multiple Docker hosts in one private dashboard.
@@ -15,11 +24,13 @@ Crowsnest is a private dashboard for Docker host and container status. A small o
 - Reports every 30 seconds, with stale-data detection after two minutes.
 - A restricted Docker socket proxy and no published collector ports.
 - Installation under `/srv/docker` with user-owned files and private credentials.
-- Migration that preserves existing host registrations and reporting tokens.
+- Search by container or image, plus a filter for containers that need attention.
 
 Crowsnest displays the latest status. It does not control containers or retain historical metrics.
 
 ## Quick start
+
+For a separate dashboard, follow [ChatGPT Sites setup](docs/chatgpt-sites.md) and use the clean source export.
 
 You need an existing private Crowsnest dashboard, a Linux host with Docker Engine and Docker Compose v2, and Docker access directly or through sudo.
 
@@ -45,7 +56,7 @@ Omit sudo if your account already has Docker access. Successful reporting logs `
 
 The downloaded setup script contains reporting credentials. Keep it and `collector.json` private. Do not commit generated installation files.
 
-See the [installation and migration guide](docs/deployment.md) for custom paths, existing installations, and upgrades.
+See the [installation guide](docs/deployment.md) for custom paths and maintenance.
 
 ## Architecture
 
@@ -76,7 +87,7 @@ npm ci --ignore-scripts --no-audit --no-fund
 npm run check
 ```
 
-Checks cover the Worker build, API behavior, generated installers, migration, and common secret patterns. GitHub Actions runs the checks on pushes and pull requests. Tests use storage and Docker command doubles; they do not contact the production dashboard.
+Checks cover the Worker build, API behavior, generated installers, and common secret patterns. The Security workflow adds Gitleaks history scanning and application security rules. GitHub Actions runs the checks on pushes and pull requests, with weekly security scans. Tests use storage and Docker command doubles; they do not contact the production dashboard.
 
 See [development and validation](docs/development.md) for build output, test coverage, and live integration checks.
 
@@ -84,11 +95,14 @@ See [development and validation](docs/development.md) for build output, test cov
 
 | Guide | Contents |
 | --- | --- |
-| [Installation and migration](docs/deployment.md) | New hosts, custom paths, migration, and upgrades |
+| [Collector installation](docs/deployment.md) | New hosts, custom paths, and maintenance |
+| [ChatGPT Sites setup](docs/chatgpt-sites.md) | Separate private deployments and distribution readiness |
+| [Versioning](docs/versioning.md) | Compatibility, changelog, and release procedure |
 | [Configuration](docs/configuration.md) | Runtime bindings, collector configuration, paths, and limits |
 | [Architecture](docs/architecture.md) | Data flow, access control, and hosting |
 | [Troubleshooting](docs/troubleshooting.md) | Permissions, reporting errors, and stale hosts |
 | [Development](docs/development.md) | Local checks, CI, and release validation |
+| [UI polish](docs/ui-polish.md) | Codex tools, design decisions, and browser validation |
 | [Contributing](CONTRIBUTING.md) | Change scope, review, and validation expectations |
 | [Security](SECURITY.md) | Credential handling and vulnerability reporting |
 | [Brand assets](worker/assets/README.md) | Logo and generation brief |
@@ -98,6 +112,8 @@ See [development and validation](docs/development.md) for build output, test cov
 The product name is Crowsnest. Existing collector filenames, the `docker-dashboard` Compose project, container names, paths, and API routes remain compatible with existing installations.
 
 This version supports one collector installation per Docker daemon and up to 100 registered hosts. A host report supports up to 250 containers and 128 KiB. Rootless Docker requires manual socket-path and user-mapping adjustments. Credential recovery, token rotation, and host deletion do not have dashboard controls.
+
+The current product version is **0.2.0**. See the [changelog](CHANGELOG.md) and [versioning policy](docs/versioning.md).
 
 GitHub stores source and runs checks. Pushing to this repository does not publish the dashboard; deployment remains managed through ChatGPT Sites.
 

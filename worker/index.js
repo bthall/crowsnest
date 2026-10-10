@@ -3,6 +3,8 @@ const PROXY = '__PROXY_SOURCE__';
 const COMPOSE = '__COMPOSE_SOURCE__';
 const SETUP = '__SETUP_SOURCE__';
 const HTML = '__BOARD_HTML__';
+const BOARD_JS = '__BOARD_JS__';
+const BOARD_CSS = '__BOARD_CSS__';
 const LOGO = '__LOGO_BASE64__';
 const STATES = new Set(['running','exited','created','restarting','paused','dead','removing','unknown']);
 const HEALTH = new Set(['healthy','unhealthy','starting','none']);
@@ -28,11 +30,11 @@ function validatedReport(data) {
   if(!text(data.engineVersion,80)) throw new Error('Invalid version');
   return {containers,engineVersion:data.engineVersion,receivedAt:new Date().toISOString()};
 }
-function installer(config=null) {
+function installer(config) {
   const blocks=[['compose.yaml',COMPOSE],['collector.py',COLLECTOR],['proxy.cfg',PROXY]];
-  if(config)blocks.push(['collector.json',JSON.stringify(config,null,2)]);
+  blocks.push(['collector.json',JSON.stringify(config,null,2)]);
   const files=blocks.map(([file,body])=>"cat > "+file+" <<'DOCKER_WATCH_FILE_EOF'\n"+body+"\nDOCKER_WATCH_FILE_EOF\n").join('');
-  return SETUP.replace('__INSTALL_MODE__',config?'install':'update').replace('__WRITE_FILES__',()=>files);
+  return SETUP.replace('__WRITE_FILES__',()=>files);
 }
 export default {async fetch(request,env) {
   const path=new URL(request.url).pathname;
@@ -52,8 +54,9 @@ export default {async fetch(request,env) {
       return json({ok:true,receivedAt:report.receivedAt});
     }
     if(path==='/assets/crowsnest-mark.png' && request.method==='GET')return new Response(Uint8Array.from(atob(LOGO),c=>c.charCodeAt(0)),{headers:{...headers,'Content-Type':'image/png','Cache-Control':'private, max-age=86400'}});
-    if(path==='/' && request.method==='GET')return new Response(HTML,{headers:{...headers,'Content-Type':'text/html; charset=utf-8','Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'"}});
-    if(path==='/collector-update.sh' && request.method==='GET')return new Response(installer(),{headers:{...headers,'Content-Type':'application/octet-stream','Content-Disposition':'attachment; filename="docker-watch-update.sh"'}});
+    if(path==='/assets/board.js' && request.method==='GET')return new Response(BOARD_JS,{headers:{...headers,'Content-Type':'text/javascript; charset=utf-8'}});
+    if(path==='/assets/board.css' && request.method==='GET')return new Response(BOARD_CSS,{headers:{...headers,'Content-Type':'text/css; charset=utf-8'}});
+    if(path==='/' && request.method==='GET')return new Response(HTML,{headers:{...headers,'Content-Type':'text/html; charset=utf-8','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'"}});
     if(path==='/api/hosts' && request.method==='GET') {
       if(!env.BUCKET)return json({error:'Storage unavailable'},503);
       const hosts=[]; let cursor;

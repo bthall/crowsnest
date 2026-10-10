@@ -11,11 +11,11 @@ npm ci --ignore-scripts --no-audit --no-fund
 npm run check
 ```
 
-Add regression coverage for changes to authentication, origin checks, report validation, storage, or installer/migration behavior. For a UI change, check narrow and wide layouts and keyboard use in a browser. State which live-host or browser checks were not performed.
+Add regression coverage for changes to authentication, origin checks, report validation, storage, or installer behavior. For a UI change, check narrow and wide layouts and keyboard use in a browser. State which live-host or browser checks were not performed.
 
 ## Preserve the deployment contract
 
-- Keep existing collector filenames, API routes, credentials, and Compose names compatible unless the change includes an explicit migration plan.
+- Keep existing collector filenames, API routes, credentials, and Compose names compatible unless the release documents the compatibility change and user steps.
 - Preserve the private dashboard access boundary and the restricted socket proxy.
 - Use the configured Sites workflow for dashboard publication. A GitHub push does not deploy it.
 - Keep operational notes out of user-facing UI unless they help users install or troubleshoot the collector.
@@ -29,3 +29,5 @@ Update the relevant guide when a command, configuration key, default path, limit
 Use synthetic values in tests. Never include real credentials, generated setup downloads, `.env` files, `collector.json`, private keys, or production logs containing tokens. Review the staged diff and run the secret checks before publishing.
 
 Report security concerns privately as described in [SECURITY.md](SECURITY.md).
+
+Follow [versioning and releases](docs/versioning.md) and update the changelog for user-visible changes. See [DESIGN.md](DESIGN.md) before UI changes.

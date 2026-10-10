@@ -15,14 +15,16 @@ The collector uses a platform service credential to reach the private Site and a
 ## Source layout
 
 - `worker/index.js`: routes, registration, report validation, and installer generation.
-- `worker/board.html`: dashboard UI.
+- `worker/board.html`, `board.js`, `board.css`: dashboard structure, interactions, and styles.
 - `worker/collector.py`: outbound status collector.
 - `worker/proxy.cfg`: restricted Docker API proxy.
 - `worker/compose.yaml`: collector deployment template.
-- `worker/setup.sh`: installer and migration template.
+- `worker/setup.sh`: installer template.
 - `scripts/`: Worker assembly and checks.
 - `.openai/hosting.json`: the existing Site's non-secret identity and R2 binding declaration.
 
 ## Publishing
 
 GitHub tracks reviewed source. Hosting remains managed by ChatGPT Sites; a push to this GitHub repository does not deploy the dashboard. Site publishing must synchronize the selected source with the existing Site repository and publish its matching artifact through the Sites workflow. Preserve the existing Site ID and access policy.
+
+Separate deployments use the clean source export described in [ChatGPT Sites setup](chatgpt-sites.md). Each deployment has independent storage and service access.

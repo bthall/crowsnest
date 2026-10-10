@@ -28,9 +28,10 @@ Crowsnest is a private dashboard for Docker host and container status. A small o
 - Fleet-wide container and host search with clearly labeled stale reports.
 - Guided Compose enrollment with file review, deployment steps, and first-report confirmation.
 - Host renaming, removal, and staged reporting-token replacement.
-- Recent activity and in-app alerts for stale hosts and unhealthy, restarting, or dead containers.
+- Recent activity and alerts for stale hosts and unhealthy, restarting, or dead containers.
+- Optional authenticated ntfy notifications, recovery messages, delivery status, and retry backoff.
 
-Crowsnest displays the latest status and records recent changes. It does not control containers or retain historical metrics. Activity retains up to 100 events per host from the last 30 days; alerts appear in the dashboard without external notifications.
+Crowsnest displays the latest status and records recent changes. It does not control containers or retain historical metrics. Activity retains up to 100 events per host from the last 30 days; optional ntfy delivery works while the dashboard is closed. See [notification setup](docs/notifications.md) for authentication and unattended stale-host checks.
 
 ## Quick start
 
@@ -96,6 +97,7 @@ See [development and validation](docs/development.md) for build output, test cov
 
 | Guide | Contents |
 | --- | --- |
+| [ntfy notifications](docs/notifications.md) | Private topics, delivery, and background checks |
 | [Collector installation](docs/deployment.md) | New hosts, custom paths, and maintenance |
 | [ChatGPT Sites setup](docs/chatgpt-sites.md) | Separate private deployments and distribution readiness |
 | [Versioning](docs/versioning.md) | Compatibility, changelog, and release procedure |

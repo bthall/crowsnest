@@ -1,0 +1,57 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+const source=await readFile('dist/server/index.js','utf8');
+const worker=(await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'))).default;
+const objects=new Map(), requests=[];
+const env={SITE_ORIGIN:'https://board.example.com',COLLECTOR_SERVICE_TOKEN:'test-service-token',NTFY_URL:'https://ntfy.example.com/fleet',NTFY_TOKEN:'test-ntfy-token',BUCKET:{
+  async get(key){const value=objects.get(key);return value===undefined?null:{json:async()=>JSON.parse(value)};},
+  async put(key,value){objects.set(key,value);},async delete(key){objects.delete(key);},
+  async list({prefix}){return {objects:[...objects.keys()].filter(key=>key.startsWith(prefix)).map(key=>({key})),truncated:false};},
+}};
+const viewer={'oai-authenticated-user-id':'owner',Origin:env.SITE_ORIGIN};
+const call=(path,method='GET',data,headers=viewer)=>worker.fetch(new Request(env.SITE_ORIGIN+path,{method,headers,body:data===undefined?undefined:JSON.stringify(data)}),env);
+const originalFetch=globalThis.fetch;
+let fail=false, invalidAck=false;
+globalThis.fetch=async(url,options)=>{requests.push({url,options});return fail?new Response('denied',{status:401}):new Response(JSON.stringify(invalidAck?{}:{id:'test-message',event:'message',topic:'fleet'}));};
+const set=(key,value)=>objects.set(key,JSON.stringify(value));
+const resetBackoff=id=>{const key='notifications/hosts/'+id+'.json', saved=JSON.parse(objects.get(key));saved.nextAttemptAt=0;set(key,saved);};
+try {
+  assert.equal((await call('/api/notifications','GET',undefined,{})).status,401);
+  assert.equal((await call('/api/notifications','PATCH',{enabled:true,recoveries:true},{...viewer,Origin:'https://evil.example'})).status,403);
+  assert.equal((await call('/api/notifications','PATCH',{enabled:true,recoveries:true,url:'https://evil.example'})).status,400);
+  const initial=await (await call('/api/notifications')).json();assert.equal(initial.enabled,false);assert.ok(!JSON.stringify(initial).includes(env.NTFY_TOKEN));
+  assert.equal((await call('/api/notifications/sweep','POST',{}, {Authorization:'Bearer wrong'})).status,401);
+  for(const url of ['http://ntfy.example.com/fleet','https://127.0.0.1/fleet','https://[::1]/fleet','https://user:secret@ntfy.example.com/fleet','https://ntfy.local/fleet','https://ntfy.example.com/fleet?token=x','https://ntfy.example.com/fleet/extra','https://ntfy.example.com/v1','https://ntfy.example.com:8443/fleet']) {
+    env.NTFY_URL=url;assert.equal((await call('/api/notifications','PATCH',{enabled:true,recoveries:true})).status,409);
+  }
+  env.NTFY_URL='https://ntfy.example.com/fleet';
+  const created=await call('/api/hosts','POST',{name:'lighthouse'}), installer=await created.text();
+  const config=JSON.parse(installer.match(/cat > collector.json <<'DOCKER_WATCH_FILE_EOF'\n([\s\S]*?)\nDOCKER_WATCH_FILE_EOF/)[1]);
+  const id=config.hostId, auth={Authorization:'Bearer '+config.hostToken};
+  const report={engineVersion:'29',containers:[{id:'a'.repeat(64),name:'web',image:'nginx',state:'running',health:'healthy',restarts:0,startedAt:'',finishedAt:''}]};
+  const deliver=()=>call('/api/ingest/'+id,'POST',report,auth);
+  assert.equal((await deliver()).status,200);assert.equal(requests.length,0);
+  await call('/api/notifications','PATCH',{enabled:true,recoveries:true});
+  await deliver();assert.equal(requests.length,0);
+  report.containers[0].health='unhealthy';await deliver();assert.equal(requests.length,1);
+  const sent=JSON.parse(requests[0].options.body);
+  assert.equal(requests[0].url,'https://ntfy.example.com/');assert.equal(requests[0].options.redirect,'error');
+  assert.equal(requests[0].options.headers.Authorization,'Bearer '+env.NTFY_TOKEN);assert.equal(sent.priority,4);assert.match(sent.message,/web: running\/unhealthy/);assert.equal(sent.click,env.SITE_ORIGIN);
+  await deliver();await deliver();assert.equal(requests.length,1,'Repeated unhealthy reports are deduplicated');
+  resetBackoff(id);report.containers[0].health='healthy';await deliver();assert.equal(requests.length,2);assert.match(JSON.parse(requests.at(-1).options.body).message,/Cleared:/);
+  resetBackoff(id);report.containers[0].state='dead';fail=true;assert.equal((await deliver()).status,200,'ntfy failure does not reject reports');
+  const failedCount=requests.length;await deliver();assert.equal(requests.length,failedCount,'Failed deliveries back off');
+  const status=await (await call('/api/notifications')).json();assert.equal(status.lastError,'HTTP 401');assert.ok(!JSON.stringify(status).includes(env.NTFY_TOKEN));
+  fail=false;resetBackoff(id);await deliver();assert.equal(requests.length,failedCount+1,'Pending transition retries');
+  await call('/api/notifications','PATCH',{enabled:true,recoveries:false});resetBackoff(id);report.containers[0].state='running';await deliver();assert.equal(requests.length,failedCount+1);
+  const snapshot=JSON.parse(objects.get('snapshots/'+id+'.json'));snapshot.receivedAt='2000-01-01T00:00:00Z';set('snapshots/'+id+'.json',snapshot);resetBackoff(id);
+  const sweepHeaders={Authorization:'Bearer '+env.COLLECTOR_SERVICE_TOKEN};
+  let sweep=await (await call('/api/notifications/sweep','POST',{},sweepHeaders)).json();assert.equal(sweep.sent,1);assert.match(JSON.parse(requests.at(-1).options.body).message,/No collector report/);
+  sweep=await (await call('/api/notifications/sweep','POST',{},sweepHeaders)).json();assert.equal(sweep.skipped,true);
+  const readback=await (await call('/api/notifications/sweep','GET',undefined,sweepHeaders)).json();assert.ok(readback.at);assert.equal(readback.sent,1);
+  await call('/api/notifications','PATCH',{enabled:false,recoveries:true});const paused=requests.length;report.containers[0].state='dead';await deliver();assert.equal(requests.length,paused);
+  invalidAck=true;assert.equal((await call('/api/notifications/test','POST',{})).status,502);assert.equal((await call('/api/notifications/test','POST',{})).status,429);
+  objects.delete('notifications/test.json');invalidAck=false;assert.equal((await call('/api/notifications/test','POST',{})).status,200);
+  assert.equal((await call('/api/hosts/'+id,'DELETE',{confirmName:'lighthouse'})).status,200);assert.ok(!objects.has('notifications/hosts/'+id+'.json'));
+  console.log('Passed: ntfy authentication, destination restrictions, no secret exposure, transitions/recoveries, deduplication, retry/backoff, stale sweep authorization, pause, test acknowledgement/rate limit, and removal cleanup.');
+}finally{globalThis.fetch=originalFetch;}

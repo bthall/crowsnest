@@ -9,6 +9,9 @@ Configure production values through ChatGPT Sites. Do not write secrets to sourc
 | `BUCKET` | Yes | R2 storage for host registrations and latest snapshots |
 | `SITE_ORIGIN` | Yes | Canonical HTTPS reporting endpoint embedded in new collector configuration |
 | `DASHBOARD_ORIGIN` | No | Preferred HTTPS browser origin; homepage requests on other Site domains redirect here |
+| `NTFY_URL` | No | Full HTTPS topic URL; operator-controlled notification destination |
+| `NTFY_TOKEN` | No, secret | Bearer token for a dedicated write-only ntfy publisher |
+| `NTFY_ENABLED` | No | `true` enables a new configuration until dashboard settings are saved; default off |
 | `COLLECTOR_SERVICE_TOKEN` | Yes, secret | Platform service credential used by collectors to reach the private Site |
 
 Keep `SITE_ORIGIN` as a stable reporting endpoint when changing the browser address. Set `DASHBOARD_ORIGIN` to the new HTTPS origin after its DNS and certificate are active. It must have no path, credentials, query, or fragment. An absent or invalid value disables the homepage redirect.
@@ -47,3 +50,7 @@ A custom installation path is passed to the setup script as its first argument. 
 - Replacement reporting tokens have a ten-minute activation window. The current token remains valid until replacement activation.
 
 A partial collection is not sent as a successful report. Stale data remains visible and is marked stale.
+
+## Notifications
+
+See [ntfy setup and background checks](notifications.md). Dashboard settings persist in R2 and override the initial `NTFY_ENABLED` default. Changing the destination starts a new delivery baseline. A configured URL alone leaves notifications off.

@@ -27,6 +27,11 @@ h3 { margin: 24px 0 8px; font-size: 17px; }
 .row-host { display: block; color: var(--accent); font-size: 11px; margin-top: 5px; }
 .event-panel { padding: 20px 24px; }
 .panel-note { font-size: 12px; max-width: 70ch; margin-bottom: 20px; }
+.notification-settings { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--line); }
+.notification-settings summary { cursor: pointer; font-weight: 600; }
+.notification-settings p { max-width: 70ch; overflow-wrap: anywhere; margin-top: 12px; }
+.notification-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.notification-settings .checkbox-label { margin: 16px 0; }
 .event-list { list-style: none; padding: 0; margin: 16px 0 0; }
 .event-list li { padding: 16px 0; border-top: 1px solid var(--line); font-size: 13px; overflow-wrap: anywhere; }
 .event-list p { margin: 4px 0 0; }

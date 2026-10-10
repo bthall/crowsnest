@@ -14,8 +14,10 @@ const files = [
   'scripts/preview.mjs', 'scripts/export-site-source.mjs',
   'scripts/check-board.mjs', 'scripts/check-installer.mjs',
   'scripts/check-enrollment.mjs',
+  'scripts/check-notifications.mjs',
   'scripts/check-secrets.mjs', 'scripts/run-checks.mjs',
   'worker/index.js', 'worker/board.html', 'worker/board.js', 'worker/board.css',
+  'worker/notifications.js',
   'worker/collector.py', 'worker/proxy.cfg', 'worker/compose.yaml', 'worker/setup.sh',
   'worker/assets/crowsnest-mark.png', 'worker/assets/README.md',
 ];

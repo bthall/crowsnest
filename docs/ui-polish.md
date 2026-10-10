@@ -29,3 +29,5 @@ Browser checks covered search by name/image, attention filtering and clearing, s
 The Impeccable detector could not resolve the absolute asset URL to the source stylesheet and consequently reported a flat-heading warning. Browser-computed styles and visual inspection verified the actual hierarchy. The detector does not establish design quality or accessibility compliance.
 
 Captures use fictional data. Native mobile browser behavior, assistive-technology behavior, and the platform's native WebMCP runtime require separate integration verification. See [DESIGN.md](../DESIGN.md) and [screenshot provenance](screenshots/README.md).
+
+Version 0.4.0 adds ntfy controls within the existing Alerts panel. A batched Chromium check at 1440, 390, and 320 pixels exercised settings, explicit test success/failure, overflow, and axe accessibility rules with synthetic responses. No page errors or accessibility violations occurred; the expected simulated HTTP 502 appeared as a network console error. README captures were refreshed from fictional data.

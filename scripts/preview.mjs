@@ -37,6 +37,9 @@ const assets = new Map([
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   res.setHeader('Cache-Control', 'no-store');
+  if(url.pathname==='/api/notifications' && req.method==='GET') {
+    res.setHeader('Content-Type','application/json');res.end(JSON.stringify({configured:true,destination:'https://ntfy.example.com/crowsnest-demo',authenticated:true,enabled:true,recoveries:true,lastSuccessAt:ago(180),lastSweepAt:ago(90)}));return;
+  }
   if(url.pathname==='/api/history' && req.method==='GET') {
     const events=[
       {at:ago(45),kind:'status',text:'immich-server: running/healthy → running/unhealthy',hostId:'demo-lighthouse',hostName:'lighthouse'},

@@ -10,9 +10,10 @@ const patterns=[
   /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/,
   /\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,}\b/,
   /\bBearer\s+[A-Za-z0-9_.-]{32,}/,
+  /\btk_[A-Za-z0-9]{30,}\b/,
 ];
-const credentialAssignment=/\b(?:hostToken|serviceToken|COLLECTOR_SERVICE_TOKEN|api[_-]?key|password|client[_-]?secret|access[_-]?token)\s*[:=]\s*["']([^"'\r\n]+)["']/gi;
-const synthetic=new Set(['test-service-token','test-host-token','test-token','example-token']);
+const credentialAssignment=/\b(?:hostToken|serviceToken|COLLECTOR_SERVICE_TOKEN|NTFY_TOKEN|api[_-]?key|password|client[_-]?secret|access[_-]?token)\s*[:=]\s*["']([^"'\r\n]+)["']/gi;
+const synthetic=new Set(['test-service-token','test-host-token','test-ntfy-token','test-token','example-token']);
 const findings=new Set();
 function check(name,buffer,history=false) {
   const label=name+(history?' (history)':'');

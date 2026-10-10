@@ -3,6 +3,21 @@
 Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 
+## [0.4.0] - 2026-10-10
+
+### Added
+
+- Optional ntfy delivery for stale/awaiting hosts and unhealthy, restarting, or dead containers, plus recovery messages.
+- Fleet-wide notification controls, delivery status, and an explicit rate-limited test in Alerts.
+- Server-only publisher credentials, bounded messages, HTTPS destinations, denied redirects, transition deduplication, and retry backoff.
+- Authorized unattended sweeps and setup instructions for stale-host detection while every collector is silent.
+- Network-mocked CI coverage for notification security and delivery behavior.
+
+### Compatibility and limits
+
+- Existing collectors continue reporting without updates. Notification delivery is optional and defaults off.
+- R2 writes are not transactional; concurrent work or an acknowledgement lost after publishing may duplicate a message. Stale-host timing depends on the configured sweep schedule.
+
 ## [0.3.0] - 2026-10-10
 
 ### Added
@@ -62,3 +77,5 @@ Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 [0.2.1]: https://github.com/bthall/crowsnest/compare/b7c9d4b1d39eb467d5b3881dc1422caf6d3d83a1...453b199d0112b27f29440e1298e8b3521e8e75f0
 [0.2.0]: https://github.com/bthall/crowsnest/compare/5efb8b44c1338f5365ac1e400fe0794cbc2431f0...b7c9d4b1d39eb467d5b3881dc1422caf6d3d83a1
 [0.1.0]: https://github.com/bthall/crowsnest/tree/5efb8b44c1338f5365ac1e400fe0794cbc2431f0
+
+[0.4.0]: https://github.com/bthall/crowsnest/compare/7ca8023a294a21a45bec7a546075a9f45b86b42e...main

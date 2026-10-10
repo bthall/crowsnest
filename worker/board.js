@@ -277,7 +277,7 @@ $('search').oninput=render;$('sudo-docker').onchange=updateCommands;$('copy-depl
 $('wait-report').onclick=()=>{setupStage(2);updateEnrollment();refresh();$('finish-setup').focus();};
 $('back-deploy').onclick=()=>setupStage(1);
 $('resume-setup').onclick=resumeSetup;
-for(const key of ['containers','activity','alerts'])$('view-'+key).onclick=()=>{view=key;render();if(key==='activity')loadHistory();};
+for(const key of ['containers','activity','alerts'])$('view-'+key).onclick=()=>{view=key;render();if(key==='activity')loadHistory();if(key==='alerts')loadNotifications();};
 $('attention-filter').onclick=()=>{attentionOnly=!attentionOnly;render();};
 $('clear-filters').onclick=()=>{attentionOnly=false;$('search').value='';render();$('search').focus();};
 $('hostname').oninput=()=>{$('hostname').setCustomValidity('');$('hostname').removeAttribute('aria-invalid');};
@@ -344,5 +344,35 @@ if (context?.registerTool) {
   }
   window.addEventListener('pagehide', () => lifecycle.abort(), {once: true});
 }
+let notificationBusy=false, notificationConfigured=false;
+function notificationControls() {
+  for(const id of ['notifications-enabled','notifications-recoveries','notifications-save','notifications-test'])$(id).disabled=notificationBusy || !notificationConfigured;
+}
+async function loadNotifications() {
+  if(notificationBusy)return;
+  notificationBusy=true;notificationControls();
+  try {
+    const response=await fetch('/api/notifications',{cache:'no-store',signal:AbortSignal.timeout(10000)});
+    if(!response.ok)throw new Error('Unable to load ntfy settings. Open Alerts again to retry.');
+    const data=await response.json();notificationConfigured=data.configured;
+    $('notification-destination').textContent=data.destination?'Topic: '+data.destination:'ntfy is not configured. Set NTFY_URL and the secret NTFY_TOKEN in the Site runtime, then publish.';
+    $('notifications-enabled').checked=data.enabled;$('notifications-recoveries').checked=data.recoveries;
+    $('notification-delivery').textContent=data.lastError?'Delivery failed: '+data.lastError+'. Automatic alerts retry with backoff. Check ntfy access and the runtime token.':data.lastSuccessAt?'Last accepted by ntfy: '+new Date(data.lastSuccessAt).toLocaleString()+'.':'No notifications have been accepted yet.';
+    $('notification-delivery').textContent+=' '+(data.lastSweepAt?'Last background check: '+new Date(data.lastSweepAt).toLocaleString()+'.':'No background check recorded. Configure a scheduled sweep for stale-host alerts.');
+  }catch(error){$('notification-message').textContent=error.message;}
+  finally{notificationBusy=false;notificationControls();}
+}
+$('notification-form').onsubmit=async event=>{
+  event.preventDefault();notificationBusy=true;notificationControls();$('notification-message').textContent='Saving…';
+  try{await mutate('/api/notifications','PATCH',{enabled:$('notifications-enabled').checked,recoveries:$('notifications-recoveries').checked});$('notification-message').textContent='Settings saved. Changes apply to the whole fleet.';}
+  catch(error){$('notification-message').textContent=error.message;}
+  finally{notificationBusy=false;notificationControls();}
+};
+$('notifications-test').onclick=async()=>{
+  notificationBusy=true;notificationControls();$('notification-message').textContent='Sending test…';
+  try{await mutate('/api/notifications/test','POST',{});$('notification-message').textContent='Test accepted by ntfy. Check your subscribed devices.';}
+  catch(error){$('notification-message').textContent=error.message;}
+  finally{notificationBusy=false;notificationControls();await loadNotifications();}
+};
 refresh();
 setInterval(() => {if (!document.hidden) refresh();}, 15000);

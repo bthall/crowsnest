@@ -40,7 +40,14 @@
         </div>
         <div class="view-switch" role="group" aria-label="Dashboard view"><button id="view-containers" aria-pressed="true">Containers</button><button id="view-activity" aria-pressed="false">Activity</button><button id="view-alerts" aria-pressed="false">Alerts <span id="alert-count" class="count">0</span></button></div>
         <div id="activity-panel" class="event-panel" hidden><p class="panel-note">Recent changes, up to 100 events per host from the last 30 days. Tracking starts with this release.</p><p id="activity-status" role="status">Loading activity…</p><ol id="activity-list" class="event-list"></ol></div>
-        <div id="alerts-panel" class="event-panel" hidden><p class="panel-note">Current issues in your fleet. These alerts appear here; no external notifications are sent.</p><p id="alerts-status" role="status"></p><ul id="alerts-list" class="event-list"></ul></div>
+        <div id="alerts-panel" class="event-panel" hidden><p class="panel-note">Current issues for this view. ntfy notifications cover the whole fleet.</p><p id="alerts-status" role="status"></p><ul id="alerts-list" class="event-list"></ul>
+          <details id="notification-settings" class="notification-settings"><summary>ntfy notifications</summary>
+            <p id="notification-destination">Loading notification settings…</p>
+            <p class="input-help">Get alerts for stale hosts and unhealthy, restarting, or dead containers while Crowsnest is closed. Subscribe to the topic in your ntfy app using your own ntfy account. Stale-host alerts need a background sweep; see the last check below.</p>
+            <form id="notification-form"><label class="checkbox-label"><input id="notifications-enabled" type="checkbox" disabled> Send fleet notifications</label><label class="checkbox-label"><input id="notifications-recoveries" type="checkbox" checked disabled> Send recovery messages</label><div class="notification-actions"><button id="notifications-save" type="submit" class="primary" disabled>Save settings</button><button id="notifications-test" type="button" class="secondary" disabled>Send test notification</button></div></form>
+            <p id="notification-delivery" class="input-help"></p><p id="notification-message" role="status"></p>
+          </details>
+        </div>
         <dl class="summary" id="summary" hidden>
           <div><dt>Containers</dt><dd id="total">—</dd></div>
           <div><dt>Running</dt><dd id="running">—</dd></div>

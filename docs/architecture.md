@@ -22,10 +22,11 @@ Replacement tokens are staged as hashes with ten-minute activation deadlines. Th
 
 Reporting compares each snapshot with the previous one to record container appearance/removal, state and health changes, restart increases, image changes, engine changes, and reporting recovery. First reports, renames, and activated replacements are also recorded. Each host retains at most 100 events; events older than 30 days are hidden and pruned on the next history write. The history API returns at most 100 events for the selected host or fleet. Concurrent reporting can coalesce events because R2 history writes are not transactional; this is an operational activity feed, not an audit log.
 
-In-app alerts derive from the latest reports: stale hosts, enrollment awaiting a report for more than ten minutes, and unhealthy/restarting/dead containers. Stale container states are explicitly last known. Alerts update while the dashboard polls; no email, webhook, push notification, or scheduled alert worker is configured. History starts with this release and does not reconstruct old snapshots. Optional history-write failures do not reject an otherwise valid report.
+In-app alerts derive from the latest reports: stale hosts, enrollment awaiting a report for more than ten minutes, and unhealthy/restarting/dead containers. Stale container states are explicitly last known. Optional ntfy delivery runs on accepted reports, with a separately scheduled sweep for stale hosts and retries. The browser controls fleet-wide enablement, recovery messages, and a rate-limited test. See [notifications](notifications.md). History starts with this release and does not reconstruct old snapshots. Optional history-write failures do not reject an otherwise valid report.
 
 ## Source layout
 
+- `worker/notifications.js`: server-side ntfy transitions, acknowledgements, retry state, and sweeps.
 - `worker/index.js`: routes, registration, report validation, and installer generation.
 - `worker/board.html`, `board.js`, `board.css`: dashboard structure, interactions, and styles.
 - `worker/collector.py`: outbound status collector.

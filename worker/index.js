@@ -108,13 +108,44 @@ function reportEvents(previous,report) {
   if(previous.engineVersion!==report.engineVersion)events.push(event('host','Docker Engine changed to '+report.engineVersion,at));
   return events;
 }
-export default {async fetch(request,env) {
+// __NOTIFICATIONS_SOURCE__
+export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifications(env));},async fetch(request,env,ctx) {
   const url=new URL(request.url), path=url.pathname;
   const viewer=!!request.headers.get('oai-authenticated-user-id');
   const ingest=path.match(/^\/api\/ingest\/([a-f0-9-]{36})$/);
-  if(!ingest && !viewer) return json({error:'Sign in to view this private board'},401);
+  const sweep=path==='/api/notifications/sweep' && request.method==='POST';
+  const notificationService=(path==='/api/notifications/sweep' && ['GET','POST'].includes(request.method) || path==='/api/notifications/test' && request.method==='POST');
+  const sweepAuth=notificationService && !!env.COLLECTOR_SERVICE_TOKEN && await hash(request.headers.get('Authorization')||'')===await hash('Bearer '+env.COLLECTOR_SERVICE_TOKEN);
+  if(!ingest && !viewer && !sweepAuth) return json({error:'Sign in to view this private board'},401);
   try {
     const canonical=dashboardOrigin(env.DASHBOARD_ORIGIN);
+    if(path.startsWith('/api/notifications')) {
+      if(!env.BUCKET)return json({error:'Storage unavailable'},503);
+      if(path==='/api/notifications' && request.method==='GET')return json(await notificationStatus(env));
+      if(path==='/api/notifications/sweep' && request.method==='GET') {
+        const result=await env.BUCKET.get('notifications/sweep.json');return json(result?await result.json():{at:null});
+      }
+      if(!sweepAuth && !sameOrigin(request))return json({error:'Invalid origin'},403);
+      if(sweep)return json(await sweepNotifications(env));
+      if(path==='/api/notifications' && request.method==='PATCH') {
+        let data;try{data=await readJson(request,1024);}catch{return json({error:'Invalid settings'},400);}
+        if(typeof data.enabled!=='boolean' || typeof data.recoveries!=='boolean' || Object.keys(data).some(k=>!['enabled','recoveries'].includes(k)))return json({error:'Choose notification and recovery settings'},400);
+        if(data.enabled && !ntfyDestination(env.NTFY_URL))return json({error:'Configure NTFY_URL in the Site runtime first'},409);
+        await env.BUCKET.put('notifications/settings.json',JSON.stringify({enabled:data.enabled,recoveries:data.recoveries}));
+        return json(await notificationStatus(env));
+      }
+      if(path==='/api/notifications/test' && request.method==='POST') {
+        const destination=ntfyDestination(env.NTFY_URL);
+        if(!destination)return json({error:'Configure NTFY_URL in the Site runtime first'},409);
+        const obj=await env.BUCKET.get('notifications/test.json'), prior=obj?await obj.json():{};
+        if(Date.now()-Date.parse(prior.at)<60000)return json({error:'Wait one minute before sending another test'},429);
+        await env.BUCKET.put('notifications/test.json',JSON.stringify({at:new Date().toISOString()}));
+        try {await publishNtfy(env,destination,'Crowsnest is connected. Subscribe to this topic in ntfy to receive fleet alerts.','Crowsnest · Test notification');}
+        catch {return json({error:'ntfy did not accept the test. Check delivery status, server access, and the runtime token.'},502);}
+        return json({ok:true});
+      }
+      return json({error:'Not found'},404);
+    }
     if(path==='/' && ['GET','HEAD'].includes(request.method) && canonical && url.origin!==canonical) {
       return new Response(null,{status:308,headers:{...headers,Location:canonical+'/'+url.search}});
     }
@@ -138,6 +169,8 @@ export default {async fetch(request,env) {
       await env.BUCKET.put('snapshots/'+host.id+'.json',JSON.stringify(report));
       // Optional history failures must not turn a delivered report into an ingestion failure.
       try {await recordHistory(env.BUCKET,host.id,[...reportEvents(previous?await previous.json():null,report),...(replacement?[event('credentials','Reporting token replaced',report.receivedAt)]:[])]);}catch{console.error('History write failed');}
+      const notify=async()=>{try{await notifyHost(env,host,report,await notificationSettings(env));}catch{console.error('Notification processing failed');}};
+      if(ctx?.waitUntil)ctx.waitUntil(notify());else await notify();
       return json({ok:true,receivedAt:report.receivedAt});
     }
     if(path==='/assets/crowsnest-mark.png' && request.method==='GET')return new Response(Uint8Array.from(atob(LOGO),c=>c.charCodeAt(0)),{headers:{...headers,'Content-Type':'image/png','Cache-Control':'private, max-age=86400'}});
@@ -191,6 +224,7 @@ export default {async fetch(request,env) {
         await env.BUCKET.delete('hosts/'+host.id+'.json');
         await env.BUCKET.delete('snapshots/'+host.id+'.json');
         await env.BUCKET.delete('history/'+host.id+'.json');
+        await env.BUCKET.delete('notifications/hosts/'+host.id+'.json');
         return json({ok:true});
       }
       if(hostRoute[2] && request.method==='POST') {

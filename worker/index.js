@@ -12,6 +12,13 @@ const headers = {'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','
 function json(data, status=200) { return new Response(JSON.stringify(data), {status,headers:{...headers,'Content-Type':'application/json'}}); }
 async function hash(value) { return [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))].map(x=>x.toString(16).padStart(2,'0')).join(''); }
 function sameOrigin(request) { return request.headers.get('Origin') === new URL(request.url).origin; }
+function dashboardOrigin(value) {
+  if(!value)return null;
+  try {
+    const url=new URL(value);
+    return url.protocol==='https:' && !url.username && !url.password && url.pathname==='/' && !url.search && !url.hash ? url.origin : null;
+  }catch{return null;}
+}
 async function readJson(request, max=131072) {
   const reader=request.body?.getReader(); if(!reader) throw new Error('Missing body');
   const chunks=[]; let size=0;
@@ -37,11 +44,15 @@ function installer(config) {
   return SETUP.replace('__WRITE_FILES__',()=>files);
 }
 export default {async fetch(request,env) {
-  const path=new URL(request.url).pathname;
+  const url=new URL(request.url), path=url.pathname;
   const viewer=!!request.headers.get('oai-authenticated-user-id');
   const ingest=path.match(/^\/api\/ingest\/([a-f0-9-]{36})$/);
   if(!ingest && !viewer) return json({error:'Sign in to view this private board'},401);
   try {
+    const canonical=dashboardOrigin(env.DASHBOARD_ORIGIN);
+    if(path==='/' && ['GET','HEAD'].includes(request.method) && canonical && url.origin!==canonical) {
+      return new Response(null,{status:308,headers:{...headers,Location:canonical+'/'+url.search}});
+    }
     if(ingest && request.method==='POST') {
       if(!env.BUCKET)return json({error:'Storage unavailable'},503);
       const object=await env.BUCKET.get('hosts/'+ingest[1]+'.json');

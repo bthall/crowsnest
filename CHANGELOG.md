@@ -3,6 +3,12 @@
 Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 
+## [0.2.1] - 2026-10-09
+
+### Fixed
+
+- Optional canonical dashboard origin for domain moves, with private homepage redirects and unchanged collector endpoints.
+
 ## [0.2.0] - 2026-10-09
 
 ### Added
@@ -33,5 +39,6 @@ Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 - Host registration, per-host reporting tokens, and latest-snapshot storage.
 - README, configuration, development, troubleshooting, and security documentation.
 
-[0.2.0]: https://github.com/bthall/crowsnest/compare/5efb8b44c1338f5365ac1e400fe0794cbc2431f0...main
+[0.2.1]: https://github.com/bthall/crowsnest/compare/b7c9d4b1d39eb467d5b3881dc1422caf6d3d83a1...main
+[0.2.0]: https://github.com/bthall/crowsnest/compare/5efb8b44c1338f5365ac1e400fe0794cbc2431f0...b7c9d4b1d39eb467d5b3881dc1422caf6d3d83a1
 [0.1.0]: https://github.com/bthall/crowsnest/tree/5efb8b44c1338f5365ac1e400fe0794cbc2431f0

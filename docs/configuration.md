@@ -8,9 +8,12 @@ Configure production values through ChatGPT Sites. Do not write secrets to sourc
 | --- | --- | --- |
 | `BUCKET` | Yes | R2 storage for host registrations and latest snapshots |
 | `SITE_ORIGIN` | Yes | Canonical HTTPS reporting endpoint embedded in new collector configuration |
+| `DASHBOARD_ORIGIN` | No | Preferred HTTPS browser origin; homepage requests on other Site domains redirect here |
 | `COLLECTOR_SERVICE_TOKEN` | Yes, secret | Platform service credential used by collectors to reach the private Site |
 
-`SITE_ORIGIN` remains the reporting endpoint when a custom domain is added. Browser registration accepts the actual request's origin; existing collectors continue to use their configured endpoint.
+Keep `SITE_ORIGIN` as a stable reporting endpoint when changing the browser address. Set `DASHBOARD_ORIGIN` to the new HTTPS origin after its DNS and certificate are active. It must have no path, credentials, query, or fragment. An absent or invalid value disables the homepage redirect.
+
+Authenticated homepage GET and HEAD requests on other attached domains redirect to `DASHBOARD_ORIGIN`; API and asset routes stay on the requested domain. Browser registration accepts the actual request's origin. Existing collectors continue to use their configured endpoint without reinstalling. Keep old domains attached while collectors use them.
 
 The hosting manifest retains the existing Site's identifier and declares the `BUCKET` R2 binding. Do not replace the Site ID during an update or change the access policy as a shortcut for service access. This checkout is configured for the existing deployment; provisioning a separate Site requires its own identity, storage, runtime settings, and access policy.
 

@@ -113,7 +113,7 @@ The product name is Crowsnest. Existing collector filenames, the `docker-dashboa
 
 This version supports one collector installation per Docker daemon and up to 100 registered hosts. A host report supports up to 250 containers and 128 KiB. Rootless Docker requires manual socket-path and user-mapping adjustments. Credential recovery, token rotation, and host deletion do not have dashboard controls.
 
-The current product version is **0.2.0**. See the [changelog](CHANGELOG.md) and [versioning policy](docs/versioning.md).
+The current product version is **0.2.1**. See the [changelog](CHANGELOG.md) and [versioning policy](docs/versioning.md).
 
 GitHub stores source and runs checks. Pushing to this repository does not publish the dashboard; deployment remains managed through ChatGPT Sites.
 

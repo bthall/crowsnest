@@ -12,6 +12,23 @@ const env={SITE_ORIGIN:'https://board.example',COLLECTOR_SERVICE_TOKEN:'test-ser
 }};
 const viewer={'oai-authenticated-user-id':'owner'};
 const call=(path,options={})=>worker.fetch(new Request(env.SITE_ORIGIN+path,options),env);
+// Canonical browser navigation must preserve privacy and existing API endpoints.
+env.DASHBOARD_ORIGIN='https://crowsnest.example.net';
+assert.equal((await call('/')).status,401);
+for(const method of ['GET','HEAD']) {
+  const redirect=await call('/?view=hosts',{method,headers:viewer});
+  assert.equal(redirect.status,308);
+  assert.equal(redirect.headers.get('Location'),env.DASHBOARD_ORIGIN+'/?view=hosts');
+  assert.equal(redirect.headers.get('Cache-Control'),'no-store');
+}
+assert.equal((await worker.fetch(new Request(env.DASHBOARD_ORIGIN+'/',{headers:viewer}),env)).status,200);
+assert.equal((await call('/api/hosts',{headers:viewer})).status,200);
+assert.equal((await call('/',{method:'POST',headers:viewer})).status,404);
+for(const invalid of ['broken','http://crowsnest.example.net','https://user:password@example.net','https://example.net/path','https://example.net/?next=bad','https://example.net/#bad']) {
+  env.DASHBOARD_ORIGIN=invalid;
+  assert.equal((await call('/',{headers:viewer})).status,200);
+}
+delete env.DASHBOARD_ORIGIN;
 assert.equal((await call('/')).status,401);
 assert.equal((await call('/',{headers:viewer})).status,200);
 const brandedPage=await (await call('/',{headers:viewer})).text();
@@ -54,6 +71,7 @@ assert.equal((await call(path,{method:'POST',headers:{Authorization:'Bearer '+co
 assert.equal((await call('/api/hosts',{method:'POST',headers:{...viewer,Origin:env.SITE_ORIGIN},body:JSON.stringify({name:'hedwig'})})).status,409);
 // Custom domains must register hosts while retaining the configured collector endpoint.
 const customOrigin='https://crowsnest.example.net';
+env.DASHBOARD_ORIGIN=customOrigin;
 const registerAt=(origin,headers,name)=>worker.fetch(new Request(origin+'/api/hosts',{method:'POST',headers,body:JSON.stringify({name})}),env);
 for(const origin of [env.SITE_ORIGIN,customOrigin]) {
   for(const invalidOrigin of ['https://untrusted.example','null',origin===customOrigin?env.SITE_ORIGIN:customOrigin]) {

@@ -9,7 +9,7 @@ const container = (name, image, state, health, restarts = 0, uptime = 86400) => 
   startedAt: ago(uptime), finishedAt: state === 'exited' ? ago(1800) : '',
 });
 function fixtures() {
-  return {hosts: [
+  const data={hosts: [
     {id: 'demo-lighthouse', name: 'lighthouse', snapshot: {engineVersion: '28.5.1', receivedAt: ago(8), containers: [
       container('caddy', 'caddy:2.10-alpine', 'running', 'healthy', 0, 864000),
       container('crowsnest-collector', 'python:3.13-alpine', 'running', 'none', 0, 691200),
@@ -27,6 +27,12 @@ function fixtures() {
       container('build-runner', 'alpine:3.22', 'running', 'none', 0, 7200),
     ]}},
   ]};
+  for(const h of data.hosts)for(const c of h.snapshot.containers){
+    c.composeProject=['immich-server','postgres','redis'].includes(c.name)?'photos':['grafana','prometheus'].includes(c.name)?'monitoring':c.name==='weekly-backup'?'':c.name==='crowsnest-collector'?'crowsnest':'infra';
+    c.composeService=c.composeProject?c.name:'';
+  }
+  data.hosts[1].maintenanceUntil=new Date(Date.now()+3600000).toISOString();
+  return data;
 }
 const assets = new Map([
   ['/', ['worker/board.html', 'text/html; charset=utf-8']],

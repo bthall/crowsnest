@@ -27,6 +27,7 @@
       </div>
     </div>
     <div id="notice" role="status" class="alert" hidden></div>
+    <div id="maintenance-banner" role="status" class="alert" hidden></div>
     <div class="workspace">
       <aside class="host-sidebar" aria-labelledby="hosts-heading">
         <div class="sidebar-heading"><h2 id="hosts-heading">Hosts</h2><span id="host-count" class="count">—</span></div>
@@ -43,6 +44,7 @@
         <div id="alerts-panel" class="event-panel" hidden><p class="panel-note">Current issues for this view. ntfy notifications cover the whole fleet.</p><p id="alerts-status" role="status"></p><ul id="alerts-list" class="event-list"></ul>
           <details id="notification-settings" class="notification-settings"><summary>ntfy notifications</summary>
             <p id="notification-destination">Loading notification settings…</p>
+            <div id="notification-subscription" hidden><h3>Subscribe on your phone</h3><ol class="subscription-steps"><li>Copy the topic URL below. In ntfy, choose <strong>Add subscription</strong> and use this server and topic. On Android, the link can open the app for you.</li><li>Sign in with your own ntfy account if prompted. Keep the publisher token in Crowsnest’s runtime.</li><li>Send a test, then confirm it appears on your phone. “Accepted by ntfy” confirms server delivery; your phone must be subscribed and allowed to show notifications.</li></ol><label class="sr-only" for="notification-topic">Private ntfy topic URL</label><input id="notification-topic" readonly autocomplete="off" spellcheck="false"><div class="notification-actions"><button id="copy-topic" type="button" class="secondary">Copy topic URL</button><a id="ntfy-android" class="download-link">Open in ntfy (Android)</a></div><p id="subscription-status" role="status"></p></div>
             <p class="input-help">Get alerts for stale hosts and unhealthy, restarting, or dead containers while Crowsnest is closed. Subscribe to the topic in your ntfy app using your own ntfy account. Stale-host alerts need a background sweep; see the last check below.</p>
             <form id="notification-form"><label class="checkbox-label"><input id="notifications-enabled" type="checkbox" disabled> Send fleet notifications</label><label class="checkbox-label"><input id="notifications-recoveries" type="checkbox" checked disabled> Send recovery messages</label><div class="notification-actions"><button id="notifications-save" type="submit" class="primary" disabled>Save settings</button><button id="notifications-test" type="button" class="secondary" disabled>Send test notification</button></div></form>
             <p id="notification-delivery" class="input-help"></p><p id="notification-message" role="status"></p>
@@ -57,6 +59,7 @@
         <div class="table-tools" id="table-tools" hidden>
           <div class="search"><label class="sr-only" for="search">Search containers or images</label><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><input id="search" type="search" placeholder="Search containers or images" autocomplete="off"></div>
           <button id="attention-filter" class="filter" aria-pressed="false">Need attention<span id="filter-count" class="count">0</span></button>
+          <button id="compose-group" class="filter" aria-pressed="false">Group by project</button>
         </div>
         <div class="empty" id="empty">
           <img id="empty-logo" src="/assets/crowsnest-mark.png" alt="" width="72" height="72">
@@ -80,7 +83,7 @@
   <dialog id="setup" aria-labelledby="setup-title" aria-describedby="setup-description">
     <div class="dialog-heading"><h2 id="setup-title">Connect a Docker host</h2><button type="button" id="cancel" class="close-button" aria-label="Close host setup"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
     <p id="setup-description">Deploy a small collector with Docker Compose, then confirm its first report.</p>
-    <ol class="setup-steps" aria-label="Enrollment progress"><li id="step-name" aria-current="step">Name host</li><li id="step-deploy">Deploy collector</li><li id="step-report">Confirm report</li></ol>
+    <ol class="setup-steps" aria-label="Enrollment progress"><li id="step-name" aria-current="step">1. Name host</li><li id="step-deploy">2. Prepare files</li><li id="step-start">3. Start collector</li><li id="step-report">4. Confirm connection</li></ol>
     <form id="setup-form">
       <label for="hostname">Host name</label>
       <input id="hostname" name="hostname" placeholder="e.g. hedwig" maxlength="64" required autocomplete="off" aria-describedby="hostname-help setup-message">
@@ -89,25 +92,30 @@
       <div class="dialog-actions"><button type="button" id="cancel-bottom" class="secondary">Cancel</button><button class="primary" type="submit" id="prepare">Prepare setup</button></div>
     </form>
     <div id="setup-deploy" hidden>
-      <h3>Deploy on <span id="setup-host-name"></span></h3>
-      <p>Copy the setup into a Bash terminal on this host. It creates private Compose files under <code>/srv/docker/docker-dashboard-collector</code> for you to review before starting.</p>
+      <h3>Prepare files on <span id="setup-host-name"></span></h3>
+      <p>Open a Bash terminal on this host. Copy the setup, paste it there, and run it as your normal user. It creates files under <code>/srv/docker/docker-dashboard-collector</code> and prints “Private Compose files prepared”. The collector starts in the next step.</p>
       <div class="setup-copy-actions"><button id="copy-setup" type="button" class="primary">Copy setup</button><span id="setup-copy-status" role="status"></span></div>
       <p class="input-help">Includes this host’s private reporting credentials. Keep the clipboard and any terminal history containing it private.</p>
       <div id="setup-copy-fallback" hidden><label for="setup-copy-text">Select and copy this setup</label><textarea id="setup-copy-text" readonly rows="7" spellcheck="false"></textarea></div>
       <details class="package-details"><summary>Package contents &amp; permissions</summary><dl><dt>compose.yaml</dt><dd>Two services, read-only filesystems, dropped capabilities, no published ports.</dd><dt>collector.py / proxy.cfg</dt><dd>Status collection and the allowed Docker API reads.</dd><dt>collector.json</dt><dd>Private reporting credentials, file mode 0600.</dd></dl></details>
-      <label for="sudo-docker" class="checkbox-label"><input id="sudo-docker" type="checkbox" checked> My Docker commands require sudo</label>
-      <p>Review <code>compose.yaml</code>, <code>collector.py</code>, and <code>proxy.cfg</code> in the installation directory. Then run these commands as your normal user.</p>
-      <div class="command-heading"><strong>Start the collector</strong><button id="copy-deploy" type="button" class="secondary">Copy start commands</button></div>
-      <pre><code id="deploy-commands"></code></pre>
-      <details class="package-details" id="transfer-details"><summary>Download and transfer instead</summary><a id="package-download" class="download-link" download="crowsnest-collector.tar">Download Compose package</a><p>Keep the package private and transfer it to the host. These commands assume it is at <code>~/Downloads/crowsnest-collector.tar</code>. If a collector is already installed, use Manage host instead.</p><div class="command-heading"><strong>Extract and start</strong><button id="copy-transfer" type="button" class="secondary">Copy commands</button></div><pre><code id="transfer-commands"></code></pre></details>
+      <details class="package-details" id="transfer-details"><summary>Download and transfer instead</summary><a id="package-download" class="download-link" download="crowsnest-collector.tar">Download Compose package</a><p>Keep the package private and transfer it to the host. These commands assume it is at <code>~/Downloads/crowsnest-collector.tar</code>. They prepare the files only. If a collector is already installed, use Manage host instead.</p><div class="command-heading"><strong>Extract files</strong><button id="copy-transfer" type="button" class="secondary">Copy commands</button></div><pre><code id="transfer-commands"></code></pre></details>
       <p id="setup-expiry" class="input-help"></p>
-      <div class="dialog-actions"><button id="wait-report" type="button" class="primary">I’ve started the collector</button></div>
+      <div class="dialog-actions"><button id="files-prepared" type="button" class="primary">Files prepared — continue</button></div>
     </div>
-    <div id="setup-wait" hidden><h3 id="enrollment-title">Waiting for the first report</h3><p id="enrollment-status" role="status">Keep this open while your collector starts.</p><p id="enrollment-help">Reports arrive every 30 seconds. If nothing arrives after a minute, check the collector logs on the host.</p><pre><code id="log-command"></code></pre><div class="dialog-actions"><button type="button" id="back-deploy" class="secondary">Back to deployment</button><button type="button" id="finish-setup" class="primary">Close</button></div></div>
+    <div id="setup-start" hidden>
+      <h3>Review and start the collector</h3><p>On the host, review <code>compose.yaml</code>, <code>collector.py</code>, and <code>proxy.cfg</code> in the installation directory. Then paste and run the start commands in the same terminal.</p>
+      <label for="sudo-docker" class="checkbox-label"><input id="sudo-docker" type="checkbox" checked> My Docker commands require sudo</label>
+      <div class="command-heading"><strong>Start the collector</strong><button id="copy-deploy" type="button" class="secondary">Copy start commands</button></div><pre><code id="deploy-commands"></code></pre>
+      <p class="input-help">Docker Compose downloads the images and starts two containers. A successful command does not confirm connection; the next step waits for an actual report.</p>
+      <div class="dialog-actions"><button id="back-prepare" type="button" class="secondary">Back to files</button><button id="wait-report" type="button" class="primary">I’ve started the collector</button></div>
+    </div>
+    <div id="setup-wait" hidden><h3 id="enrollment-title">Waiting for the first report</h3><p id="enrollment-status" role="status">Keep this open while your collector starts.</p><p id="enrollment-help">Reports arrive every 30 seconds. If nothing arrives after a minute, check the collector logs on the host.</p><pre><code id="log-command"></code></pre><div class="dialog-actions"><button type="button" id="back-deploy" class="secondary">Back to start commands</button><button type="button" id="finish-setup" class="primary">Close</button></div></div>
     <p id="setup-message" role="status" hidden></p>
   </dialog>
   <dialog id="management" aria-labelledby="management-title"><div class="dialog-heading"><h2 id="management-title">Manage host</h2><button id="close-management" class="close-button" aria-label="Close host management"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
     <form id="rename-form"><label for="rename-host">Host name</label><input id="rename-host" maxlength="64" required autocomplete="off"><div class="dialog-actions"><button type="submit" id="rename-save" class="primary">Save name</button></div></form>
+    <section class="management-section" aria-labelledby="maintenance-title"><h3 id="maintenance-title">Maintenance mode</h3><p>Pause automatic ntfy alerts and recoveries for this host. Reports, health, and activity remain visible. Notifications resume automatically when the timer ends.</p><p id="maintenance-status" role="status"></p><label for="maintenance-duration">Pause for</label><select id="maintenance-duration"><option value="15">15 minutes</option><option value="60" selected>1 hour</option><option value="240">4 hours</option><option value="1440">24 hours</option></select><div class="notification-actions"><button id="maintenance-save" type="button" class="secondary">Pause notifications</button><button id="maintenance-end" type="button" class="secondary" hidden>End maintenance now</button></div></section>
+    <details class="management-section"><summary>Update collector</summary><p>For an existing installation: replace only <code>collector.py</code> and restart the collector. Compose project grouping needs this update. Your credentials, Compose file, and user permissions are kept. Run as the user who owns the installation; sudo is used for Docker if needed.</p><button id="prepare-update" type="button" class="secondary">Prepare update command</button><div id="collector-update" hidden><label for="collector-update-command">Run this in Bash on the host</label><textarea id="collector-update-command" readonly rows="7" spellcheck="false"></textarea><button id="copy-update" type="button" class="secondary">Copy update command</button><p id="collector-update-status" role="status"></p><p class="input-help">Default directory: <code>/srv/docker/docker-dashboard-collector</code>. For another path, export <code>CROWSNEST_COLLECTOR_DIR</code> before running.</p></div></details>
     <details class="management-section"><summary>Replace reporting token</summary><p>Prepare a new configuration and apply it on the host within ten minutes. The current token stays valid until the first successful report using the replacement. This replaces the host token; platform service access is unchanged.</p><button id="rotate-token" class="secondary">Prepare new credentials</button><div id="rotation-result" hidden><a id="config-download" class="download-link" download="collector.json">Download collector.json</a><pre><code id="rotation-commands"></code></pre><p id="rotation-status" role="status"></p></div></details>
     <details class="management-section"><summary>Remove host</summary><p>Removes this host, its snapshot, and activity. Reporting credentials stop working. Containers on the host keep running; stop the collector there with <code>docker compose down</code>.</p><label for="remove-name" id="remove-label">Enter the host name to confirm</label><input id="remove-name" autocomplete="off"><button id="remove-host" class="danger" disabled>Remove host</button></details>
     <p id="management-message" role="status" hidden></p>

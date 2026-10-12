@@ -4,7 +4,7 @@
 
 In the private dashboard, choose **Connect a host**, enter a unique name, and choose **Prepare setup**. Choose **Copy setup** and paste it into a Bash terminal on the Docker host as your normal user. Docker Engine and Compose v2 must already be installed. Setup detects whether Docker needs sudo, creates a private directory owned by your user, and writes `compose.yaml`, `collector.py`, `proxy.cfg`, `collector.json`, and `.env`. It validates the Compose configuration without pulling images or starting containers.
 
-Review `compose.yaml`, `collector.py`, and `proxy.cfg` in `/srv/docker/docker-dashboard-collector`, then use **Copy start commands** to start the collector. No file transfer is needed. If clipboard access is blocked, the dashboard reveals a selected, read-only setup field for manual copying. Closing setup clears the in-memory command and that field; it cannot clear your operating system clipboard or terminal history.
+When the terminal prints **Private Compose files prepared**, choose **Files prepared — continue**. Review `compose.yaml`, `collector.py`, and `proxy.cfg` in `/srv/docker/docker-dashboard-collector`, then use **Copy start commands** to start the collector. No file transfer is needed. If clipboard access is blocked, the dashboard reveals a selected, read-only setup field for manual copying. Closing setup clears the in-memory command and that field; it cannot clear your operating system clipboard or terminal history.
 
 Copied setup contains the same private reporting credentials as a downloaded package. Paste it only into the intended host's terminal and keep any shell history containing it private. The dashboard does not create a public credential download URL or put service credentials in a curl command.
 
@@ -62,3 +62,15 @@ sudo docker compose up -d --force-recreate collector
 The existing token stays valid until a successful report using the replacement arrives. The replacement must first activate within ten minutes. An expired or lost replacement does not revoke the current token; prepare another configuration. Keep a private copy of the previous configuration until activation is confirmed so you can restore it after an expired attempt. Once activated, the previous host token is rejected. Only the latest prepared replacement can activate.
 
 This flow rotates the per-host reporting token. The platform service credential is shared by collectors and must be changed through Sites, followed by updating every collector. For a compromised host token requiring immediate revocation, remove the host rather than relying on the staged replacement window, then enroll it again with a new installation/configuration.
+
+## Update an existing collector
+
+Select the host, then **Manage host → Update collector → Prepare update command**. Copy the command into Bash on that host as the user who owns its installation. It atomically replaces only `collector.py`, validates the existing Compose configuration, and recreates the collector service. It does not replace `collector.json`, rotate tokens, change `.env`, or overwrite `compose.yaml`. Docker uses sudo if the user cannot access the daemon directly.
+
+For a different path, run `export CROWSNEST_COLLECTOR_DIR='/srv/docker/your-directory'` before the copied block. Missing configuration or a symlink in place of `collector.py` stops the update. Watch for `Status delivered` in collector logs and refresh the dashboard. Existing collectors remain compatible, but Compose grouping requires the updated collector; missing metadata is labeled explicitly in the table.
+
+## Pause notifications during maintenance
+
+Select a host and open **Manage host → Maintenance mode**. Choose 15 minutes, 1 hour, 4 hours, or 24 hours and pause notifications. A banner and host label show the pause. **End maintenance now** resumes early; otherwise the timer expires automatically using server time.
+
+Automatic alerts and recoveries are suppressed for that host, including background stale-host checks. Reports, health indicators, in-app alerts, and activity continue. After expiry or early end, the next report or background sweep evaluates current issues against the last delivered notification state. A failure that appears and clears entirely during the pause sends no false recovery. A previously delivered alert can send a recovery afterward. Manual ntfy tests remain available.

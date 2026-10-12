@@ -3,6 +3,26 @@
 Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 
+## [0.6.0] - 2026-10-12
+
+### Added
+
+- Compose grouping by host and project, service labels, and project/service search. Older collectors keep working; metadata becomes available after a collector update.
+- Timed per-host maintenance (15 minutes, 1 hour, 4 hours, or 24 hours), with early end, automatic expiry, and visible notification-pause indicators. Reports, health, and activity continue during maintenance.
+- Copyable in-place collector updates that preserve credentials, Compose configuration, and user permissions.
+- ntfy topic copying, Android app links, and explicit subscription/test guidance without exposing publisher credentials.
+
+### Changed
+
+- Enrollment separates naming, file preparation, collector startup, and actual first-report confirmation. Copy success is distinct from installation success.
+- Updated documentation, compatibility checks, and screenshots using fictional data.
+
+### Compatibility and limits
+
+- Existing reports remain accepted. Only the two standard Compose labels are collected; no arbitrary labels or environment variables are transmitted.
+- Maintenance resumes on the next report or background sweep and compares current issues with the last delivered state. Transient suppressed issues do not generate false recoveries. Notification state remains best effort under concurrent R2 writes.
+- Resource usage and collector version reporting remain on the longer-term roadmap.
+
 ## [0.5.0] - 2026-10-12
 
 ### Added
@@ -112,3 +132,5 @@ Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 [0.4.2]: https://github.com/bthall/crowsnest/compare/6b3897592520d5ae8fb8f021eab24d88a4398b70...main
 
 [0.5.0]: https://github.com/bthall/crowsnest/compare/3f09bea74a1cfefd45ce66a832080fa37637c377...main
+
+[0.6.0]: https://github.com/bthall/crowsnest/compare/62d219757223eb8a8ec319fbf3b44ff2dac624d7...main

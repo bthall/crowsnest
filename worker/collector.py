@@ -18,6 +18,7 @@ def report():
     for item in containers:
         c = get(prefix + '/containers/' + item['Id'] + '/json')
         state = c.get('State', {})
+        labels = c.get('Config', {}).get('Labels') or {}
         result.append({
             'id': c['Id'], 'name': c.get('Name', '').lstrip('/'),
             'image': c.get('Config', {}).get('Image', 'unknown'),
@@ -25,7 +26,9 @@ def report():
             'health': state.get('Health', {}).get('Status', 'none'),
             'restarts': c.get('RestartCount', 0),
             'startedAt': state.get('StartedAt', ''),
-            'finishedAt': state.get('FinishedAt', '')
+            'finishedAt': state.get('FinishedAt', ''),
+            'composeProject': labels.get('com.docker.compose.project', ''),
+            'composeService': labels.get('com.docker.compose.service', '')
         })
     body = json.dumps({'containers': result, 'engineVersion': version.get('Version', 'unknown')}).encode()
     req = urllib.request.Request(CONFIG['url'] + '/api/ingest/' + CONFIG['hostId'], data=body, headers={

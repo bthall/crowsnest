@@ -25,6 +25,7 @@ Crowsnest is a private dashboard for Docker host and container status. A small o
 ## Features
 
 - Multiple Docker hosts in one private dashboard.
+- Compose project grouping, service labels, and project/service search.
 - Separate process-state and Docker health indicators.
 - Reports every 30 seconds, with stale-data detection after two minutes.
 - A restricted Docker socket proxy and no published collector ports.
@@ -34,7 +35,9 @@ Crowsnest is a private dashboard for Docker host and container status. A small o
 - Copy-and-paste Compose setup, file review, and first-report confirmation, with an optional package download.
 - Host renaming, removal, and staged reporting-token replacement.
 - Recent activity and alerts for stale hosts and unhealthy, restarting, or dead containers.
-- Optional authenticated ntfy notifications, recovery messages, delivery status, and retry backoff.
+- Optional authenticated ntfy notifications, phone subscription help, recovery messages, and retry backoff.
+- Timed per-host maintenance pauses with automatic notification resumption.
+- Copyable collector updates that preserve reporting credentials and user permissions.
 
 Crowsnest displays the latest status and records recent changes. It does not control containers or retain historical metrics. Activity retains up to 100 events per host from the last 30 days; optional ntfy delivery works while the dashboard is closed. See [notification setup](docs/notifications.md) for authentication and unattended stale-host checks.
 
@@ -47,8 +50,9 @@ You need an existing private Crowsnest dashboard, a Linux host with Docker Engin
 1. Open your dashboard and choose **Connect a host**.
 2. Enter a unique host name and choose **Prepare setup**.
 3. Choose **Copy setup** and paste into a Bash terminal on the host to prepare its private Compose files.
-4. Review the files and run the displayed start commands as your normal user. Choose whether Docker commands need sudo.
-5. Leave setup open to confirm the first collector report.
+4. When the terminal prints **Private Compose files prepared**, choose **Files prepared — continue**.
+5. Review the files and run the displayed start commands as your normal user. Choose whether Docker commands need sudo.
+6. Choose **I’ve started the collector** and wait for an actual report to confirm connection.
 
 The default directory is `/srv/docker/docker-dashboard-collector`. Setup creates a private directory owned by your user and refuses to overwrite an existing installation. **Download and transfer instead** remains available as an alternative.
 
@@ -105,6 +109,7 @@ See [development and validation](docs/development.md) for build output, test cov
 | [ntfy notifications](docs/notifications.md) | Private topics, delivery, and background checks |
 | [Collector installation](docs/deployment.md) | New hosts, custom paths, and maintenance |
 | [ChatGPT Sites setup](docs/chatgpt-sites.md) | Separate private deployments and distribution readiness |
+| [Roadmap](docs/roadmap.md) | Resource usage and collector version reporting candidates |
 | [Versioning](docs/versioning.md) | Compatibility, changelog, and release procedure |
 | [Configuration](docs/configuration.md) | Runtime bindings, collector configuration, paths, and limits |
 | [Architecture](docs/architecture.md) | Data flow, access control, and hosting |
@@ -121,7 +126,7 @@ The product name is Crowsnest. Existing collector filenames, the `docker-dashboa
 
 This version supports one collector installation per Docker daemon and up to 100 registered hosts. A host report supports up to 250 containers and 128 KiB. Rootless Docker requires manual socket-path and user-mapping adjustments. Host management replaces reporting credentials; changing the platform service credential still requires updating every collector.
 
-The current product version is **0.5.0**. See the [changelog](CHANGELOG.md) and [versioning policy](docs/versioning.md).
+The current product version is **0.6.0**. See the [changelog](CHANGELOG.md) and [versioning policy](docs/versioning.md).
 
 GitHub stores source and runs checks. Pushing to this repository does not publish the dashboard; deployment remains managed through ChatGPT Sites.
 

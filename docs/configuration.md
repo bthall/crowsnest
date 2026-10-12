@@ -46,6 +46,8 @@ A custom installation path is passed to the setup script as its first argument. 
 - A report body no larger than 128 KiB.
 - Host names up to 64 characters, unique without regard to case.
 - Only the latest snapshot is retained for each host.
+- Compose project/service fields are optional, at most 128 characters each. Only the standard `com.docker.compose.project` and `com.docker.compose.service` labels are collected.
+- Per-host maintenance timers allow 15 minutes, 1 hour, 4 hours, or 24 hours; the server bounds the duration.
 - Activity retains up to 100 events per host within 30 days; older entries are hidden and pruned on the next history write.
 - Replacement reporting tokens have a ten-minute activation window. The current token remains valid until replacement activation.
 

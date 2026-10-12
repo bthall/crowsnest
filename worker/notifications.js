@@ -12,6 +12,10 @@ async function notificationSettings(env) {
   const object=await env.BUCKET.get('notifications/settings.json');
   return object?await object.json():{enabled:env.NTFY_ENABLED==='true',recoveries:true};
 }
+async function hostMaintenance(bucket,id) {
+  const object=await bucket.get('maintenance/hosts/'+id+'.json');
+  return object?await object.json():{};
+}
 async function notificationStatus(env) {
   const settings=await notificationSettings(env), destination=ntfyDestination(env.NTFY_URL);
   const object=await env.BUCKET.get('notifications/delivery.json');
@@ -55,10 +59,15 @@ async function publishNtfy(env,destination,message,title,priority=3) {
 async function notifyHost(env,host,snapshot,settings,now=Date.now()) {
   const destination=ntfyDestination(env.NTFY_URL);
   if(!settings.enabled || !destination)return {sent:0,pending:0};
+  const maintenance=await hostMaintenance(env.BUCKET,host.id);
+  // Keep the delivered baseline intact: changes that clear entirely during a pause
+  // must not generate recovery messages for alerts that were never sent.
+  if(Date.parse(maintenance.until)>now)return {sent:0,pending:0};
   const key='notifications/hosts/'+host.id+'.json', object=await env.BUCKET.get(key);
   const saved=object?await object.json():{delivered:{}};
   // A newly configured destination gets its own baseline.
   if(saved.destination!==destination.url){saved.delivered={};saved.destination=destination.url;saved.nextAttemptAt=0;saved.attempts=0;}
+  if(saved.maintenanceRevision!==maintenance.revision){saved.nextAttemptAt=0;saved.attempts=0;saved.maintenanceRevision=maintenance.revision;}
   const current=notificationIssues(host,snapshot,now), added=[], removed=[];
   for(const [id,text] of Object.entries(current))if(saved.delivered[id]!==text)added.push(text);
   for(const [id,text] of Object.entries(saved.delivered))if(!current[id])removed.push(id==='report'?(snapshot?'Collector reporting resumed':'Report warning cleared'):text.split(': ')[0]+': no longer in an alert state or no longer reported; check the dashboard');

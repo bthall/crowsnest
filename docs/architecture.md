@@ -4,7 +4,7 @@ The dashboard is a dependency-free Cloudflare Worker hosted through ChatGPT Site
 
 Each host runs a Python collector and an HAProxy socket proxy in Docker Compose. The proxy exposes only Docker version, container list, and container inspection reads over an internal Docker network. It denies other endpoints and methods. The collector has outbound HTTPS access and sends a report every 30 seconds. Neither service publishes ports.
 
-Reports include container name, image, state, health, restart count, timestamps, and Docker Engine version. Environment variables, container logs, mounts, and network addresses are not sent. Cloudflare R2 holds host registration records, latest reports, and bounded activity records. The dashboard does not control containers.
+Reports include container name, image, state, health, restart count, timestamps, Docker Engine version, and optional Compose project/service names. Only `com.docker.compose.project` and `com.docker.compose.service` are read from labels; arbitrary labels, environment variables, logs, mounts, and network addresses are not sent. Cloudflare R2 holds registrations, latest reports, bounded activity, maintenance timers, and notification state. The dashboard does not control application containers.
 
 ## Authentication
 
@@ -14,7 +14,7 @@ The collector uses a platform service credential to reach the private Site and a
 
 ## Enrollment and lifecycle
 
-The dashboard requests private setup JSON containing a copyable Bash preparation block and a standard tar package with matching credentials. The block writes inspectable Compose, collector, proxy, and configuration files with private credential-file permissions, without starting containers. A three-step flow follows naming, deployment, and the first report. The registration API retains its previous Compose and script responses for compatibility. Private setup is only issued through authenticated same-origin requests; no public download endpoint is added.
+The dashboard requests private setup JSON containing a copyable Bash preparation block and a standard tar package with matching credentials. The block writes inspectable Compose, collector, proxy, and configuration files with private credential-file permissions, without starting containers. Four stages separate naming, preparing files, reviewing/starting the collector, and confirming an actual report. The registration API retains its previous Compose and script responses for compatibility. Private setup is only issued through authenticated same-origin requests; no public download endpoint is added. Collector updates return a source-only Bash block and do not issue new credentials.
 
 Replacement tokens are staged as hashes with ten-minute activation deadlines. The original remains usable until a validated report arrives using the replacement; that report promotes the new hash and clears the pending replacement. Host lists expose only a non-secret credential revision for activation feedback. Removal deletes the registration, snapshot, and activity; subsequent reports for that host are rejected.
 
@@ -23,6 +23,8 @@ Replacement tokens are staged as hashes with ten-minute activation deadlines. Th
 Reporting compares each snapshot with the previous one to record container appearance/removal, state and health changes, restart increases, image changes, engine changes, and reporting recovery. First reports, renames, and activated replacements are also recorded. Each host retains at most 100 events; events older than 30 days are hidden and pruned on the next history write. The history API returns at most 100 events for the selected host or fleet. Concurrent reporting can coalesce events because R2 history writes are not transactional; this is an operational activity feed, not an audit log.
 
 In-app alerts derive from the latest reports: stale hosts, enrollment awaiting a report for more than ten minutes, and unhealthy/restarting/dead containers. Stale container states are explicitly last known. Optional ntfy delivery runs on accepted reports, with a separately scheduled sweep for stale hosts and retries. The browser controls fleet-wide enablement, recovery messages, and a rate-limited test. See [notifications](notifications.md). History starts with this release and does not reconstruct old snapshots. Optional history-write failures do not reject an otherwise valid report.
+
+Per-host maintenance is stored separately from registration records so timer writes cannot overwrite credential changes. Both ingestion and sweeps check the server-time expiry before automatic delivery. During a pause, the last delivered notification baseline remains intact. After expiry or early end, current issues are re-evaluated on the next report or sweep. Reports, health, and activity continue during maintenance. These R2 operations are best effort: an already in-flight publish can finish after a pause starts.
 
 ## Source layout
 

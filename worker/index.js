@@ -33,7 +33,11 @@ function validatedReport(data) {
   const text=(s,n)=> typeof s==='string' && s.length<=n;
   const containers=data.containers.map(c=>{
     if(!c || !/^[a-f0-9]{64}$/.test(c.id) || seen.has(c.id) || !text(c.name,256) || !text(c.image,512) || !STATES.has(c.state) || !HEALTH.has(c.health) || !Number.isSafeInteger(c.restarts) || c.restarts<0 || !text(c.startedAt,64) || !text(c.finishedAt,64)) throw new Error('Invalid container');
-    seen.add(c.id); return {id:c.id,name:c.name,image:c.image,state:c.state,health:c.health,restarts:c.restarts,startedAt:c.startedAt,finishedAt:c.finishedAt};
+    const metadata={};
+    for(const key of ['composeProject','composeService']) {
+      if(c[key]!==undefined){if(!text(c[key],128))throw new Error('Invalid Compose metadata');metadata[key]=c[key];}
+    }
+    seen.add(c.id); return {id:c.id,name:c.name,image:c.image,state:c.state,health:c.health,restarts:c.restarts,startedAt:c.startedAt,finishedAt:c.finishedAt,...metadata};
   });
   if(!text(data.engineVersion,80)) throw new Error('Invalid version');
   return {containers,engineVersion:data.engineVersion,receivedAt:new Date().toISOString()};
@@ -43,6 +47,9 @@ function installer(config) {
   blocks.push(['collector.json',JSON.stringify(config,null,2)]);
   const files=blocks.map(([file,body])=>"cat > "+file+" <<'DOCKER_WATCH_FILE_EOF'\n"+body+"\nDOCKER_WATCH_FILE_EOF\n").join('');
   return SETUP.replace('__WRITE_FILES__',()=>files);
+}
+function collectorUpdate() {
+  return "bash <<'CROWSNEST_UPDATE'\nset -eu\ncd \"${CROWSNEST_COLLECTOR_DIR:-/srv/docker/docker-dashboard-collector}\"\ntest -O . && test -f collector.json && test -f compose.yaml && test ! -L collector.py\nupdate_file=\"$(mktemp .collector.py.XXXXXX)\"\ntrap 'rm -f \"$update_file\"' EXIT\ncat > \"$update_file\" <<'CROWSNEST_COLLECTOR_SOURCE'\n"+COLLECTOR+"\nCROWSNEST_COLLECTOR_SOURCE\nchmod 0644 \"$update_file\"\nmv -- \"$update_file\" collector.py\nif docker info >/dev/null 2>&1; then\n  docker compose config --quiet && docker compose up -d --force-recreate collector\nelse\n  sudo docker compose config --quiet && sudo docker compose up -d --force-recreate collector\nfi\nCROWSNEST_UPDATE\n";
 }
 function tar(files) {
   const encoder=new TextEncoder(), chunks=[];
@@ -185,7 +192,8 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
         for(const item of list.objects) {
           const config=await env.BUCKET.get(item.key); if(!config)continue;
           const h=await config.json(), snapshot=await env.BUCKET.get('snapshots/'+h.id+'.json');
-          hosts.push({id:h.id,name:h.name,createdAt:h.createdAt,credentialRevision:h.tokenRevision||0,snapshot:snapshot?await snapshot.json():null});
+          const maintenance=await hostMaintenance(env.BUCKET,h.id);
+          hosts.push({id:h.id,name:h.name,createdAt:h.createdAt,credentialRevision:h.tokenRevision||0,maintenanceUntil:maintenance.until||null,snapshot:snapshot?await snapshot.json():null});
         } cursor=list.truncated?list.cursor:undefined;
       }while(cursor);
       return json({hosts});
@@ -204,7 +212,7 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
       if(['compose','setup'].includes(data.format))return collectorDownload(collectorConfig(env,id,token),data.format);
       return new Response(installer(collectorConfig(env,id,token)),{headers:{...headers,'Content-Type':'application/octet-stream','Content-Disposition':'attachment; filename="docker-watch-setup.sh"'}});
     }
-    const hostRoute=path.match(/^\/api\/hosts\/([a-f0-9-]{36})(?:\/(collector))?$/);
+    const hostRoute=path.match(/^\/api\/hosts\/([a-f0-9-]{36})(?:\/(collector|maintenance))?$/);
     if(hostRoute && ['PATCH','DELETE','POST'].includes(request.method)) {
       if(!sameOrigin(request))return json({error:'Invalid origin'},403);
       if(!env.BUCKET)return json({error:'Storage unavailable'},503);
@@ -212,6 +220,13 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
       if(!obj)return json({error:'Unknown host'},404);
       const host=await obj.json();
       let data;try{data=await readJson(request,2048);}catch{return json({error:'Invalid request'},400);}
+      if(hostRoute[2]==='maintenance' && request.method==='POST') {
+        if(![0,15,60,240,1440].includes(data.minutes) || Object.keys(data).some(k=>k!=='minutes'))return json({error:'Choose 15 minutes, 1 hour, 4 hours, 24 hours, or end maintenance'},400);
+        const until=data.minutes?new Date(Date.now()+data.minutes*60000).toISOString():null;
+        await env.BUCKET.put('maintenance/hosts/'+host.id+'.json',JSON.stringify({until,revision:crypto.randomUUID()}));
+        try{await recordHistory(env.BUCKET,host.id,[event('maintenance',until?'Notifications paused until '+until:'Maintenance ended; notifications resume on the next report or background check')]);}catch{console.error('History write failed');}
+        return json({ok:true,maintenanceUntil:until});
+      }
       if(!hostRoute[2] && request.method==='PATCH') {
         if(!validName(data.name))return json({error:'Use a host name up to 64 characters'},400);
         if(!await uniqueName(env.BUCKET,data.name,host.id))return json({error:'That host name is already in use'},409);
@@ -226,9 +241,11 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
         await env.BUCKET.delete('snapshots/'+host.id+'.json');
         await env.BUCKET.delete('history/'+host.id+'.json');
         await env.BUCKET.delete('notifications/hosts/'+host.id+'.json');
+        await env.BUCKET.delete('maintenance/hosts/'+host.id+'.json');
         return json({ok:true});
       }
-      if(hostRoute[2] && request.method==='POST') {
+      if(hostRoute[2]==='collector' && request.method==='POST') {
+        if(data.format==='update')return json({updateCommand:collectorUpdate()});
         if(!env.COLLECTOR_SERVICE_TOKEN)return json({error:'Collector setup unavailable'},503);
         if(!['compose','config','setup'].includes(data.format))return json({error:'Choose a collector package or configuration'},400);
         const token=crypto.randomUUID()+crypto.randomUUID();

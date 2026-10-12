@@ -1,12 +1,14 @@
 let hosts = [], selected = null, loading = false, loaded = false;
 let lastError = '', setupSuccess = '', attentionOnly = false;
-let helpInitialized = false;
+let helpInitialized = false, groupByProject = false;
 let view = 'containers', historyEvents = [], historyError = '', historyLoading = false, historySequence = 0;
 let enrollmentId = null, packageUrl = null, configUrl = null, managedId = null, rotationRevision = null, rotationExpiry = 0;
 let setupCommand = '';
 const $ = id => document.getElementById(id);
 const age = iso => Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 1000));
 const needsAttention = c => c.health === 'unhealthy' || ['restarting', 'dead'].includes(c.state);
+const inMaintenance = h => Date.parse(h?.maintenanceUntil) > Date.now();
+const maintenanceText = h => 'Notifications paused until '+new Date(h.maintenanceUntil).toLocaleString();
 function duration(seconds) {
   if (!Number.isFinite(seconds)) return '—';
   if (seconds < 60) return seconds + 's';
@@ -53,23 +55,42 @@ function syncHosts() {
     const stateEl = button.querySelector('.host-state');
     stateEl.className = 'host-state' + (state === 'Reporting' ? ' good' : state === 'Stale' ? ' warn' : '');
     const count = host.snapshot?.containers.length;
-    stateEl.textContent = state + (host.snapshot ? ' · ' + count + (count === 1 ? ' container' : ' containers') : '');
+    stateEl.textContent = inMaintenance(host) ? 'Maintenance · '+state : state + (host.snapshot ? ' · ' + count + (count === 1 ? ' container' : ' containers') : '');
   }
 }
 function renderRows(containers) {
-  const rows = containers.map(c => {
+  const rows = [];
+  const groups = new Map();
+  for(const c of containers) {
+    const key=JSON.stringify([c.hostId,c.composeProject??null]);
+    if(!groups.has(key))groups.set(key,[]);
+    groups.get(key).push(c);
+  }
+  const grouped=groupByProject?[...groups.values()].sort((a,b)=>a[0].hostName.localeCompare(b[0].hostName)||(a[0].composeProject||'').localeCompare(b[0].composeProject||'')):[containers];
+  for(const group of grouped) {
+    if(groupByProject) {
+      const first=group[0], label=first.composeProject===undefined?'Project metadata unavailable — update collector':first.composeProject||'Standalone containers';
+      const row=node('tr','project-heading'), heading=node('th','',label+(selected===null?' · '+first.hostName:''));
+      heading.colSpan=5;heading.scope='rowgroup';
+      const issues=group.filter(needsAttention).length;
+      heading.append(node('span','project-summary',group.length+' container'+(group.length===1?'':'s')+(issues?' · '+issues+' need attention':'')));
+      row.append(heading);rows.push(row);
+    }
+    for(const c of group) {
     const row = node('tr'), name = node('td');
     const uptime = c.state === 'running' && Date.parse(c.startedAt) > 0 ? duration(age(c.startedAt)) : '—';
     name.append(node('strong', 'container-name', c.name), node('span', 'image', c.image));
-    if(c.hostName) name.append(node('span','row-host',c.hostName+(c.stale?' · last known status':'')));
+    if(selected===null) name.append(node('span','row-host',c.hostName+(c.stale?' · last known status':'')));
+    if(c.composeService)name.append(node('span','image','Service: '+c.composeService));
     name.append(node('span', 'mobile-details', 'Uptime ' + uptime + ' · ' + c.restarts + ' restarts'));
     const state = node('td');
     state.append(node('span', 'pill ' + (c.state === 'running' ? 'good' : ['restarting', 'dead'].includes(c.state) ? 'bad' : ''), c.state));
     const health = node('td');
     health.append(node('span', c.health === 'none' ? 'no-check' : 'pill ' + (c.health === 'healthy' ? 'good' : c.health === 'unhealthy' ? 'bad' : 'warn'), c.health === 'none' ? 'No check' : c.health));
     row.append(name, state, health, node('td', 'desktop-detail', uptime), node('td', 'desktop-detail number', c.restarts));
-    return row;
-  });
+    rows.push(row);
+    }
+  }
   $('rows').replaceChildren(...rows);
 }
 function render() {
@@ -82,6 +103,9 @@ function render() {
   $('fleet-summary').textContent = !loaded ? 'Loading your fleet…' : !hosts.length ? 'Connect a host to start watching your containers.' :
     hosts.length + (hosts.length === 1 ? ' host' : ' hosts') + ' · ' + reporting + ' reporting' + (staleHosts ? ' · ' + staleHosts + ' stale' : '');
   const host = hosts.find(h => h.id === selected), snapshot = host?.snapshot, fleet = selected === null;
+  const paused=hosts.filter(h=>(fleet || h.id===selected) && inMaintenance(h));
+  $('maintenance-banner').hidden=!paused.length;
+  $('maintenance-banner').textContent=host && paused.length?host.name+': '+maintenanceText(host)+'. Health and activity stay visible.':paused.length+' host'+(paused.length===1?' is':'s are')+' in maintenance. Automatic notifications are paused for those hosts; health and activity stay visible.';
   $('search').placeholder=fleet?'Search containers, images, or hosts':'Search containers or images';
   $('search').setAttribute('aria-label',$('search').placeholder);
   const stale = !!snapshot && age(snapshot.receivedAt) > 120;
@@ -93,7 +117,7 @@ function render() {
   $('host-status').className = 'status' + (stale ? ' warn' : snapshot ? ' good' : '');
   $('manage-host').hidden = !host;
   $('resume-setup').hidden = !host || !!snapshot;
-  const containers = fleet ? hosts.flatMap(h=>(h.snapshot?.containers||[]).map(c=>({...c,hostName:h.name,stale:hostState(h)==='Stale'}))) : snapshot?.containers || [];
+  const containers = hosts.filter(h=>fleet || h.id===selected).flatMap(h=>(h.snapshot?.containers||[]).map(c=>({...c,hostId:h.id,hostName:h.name,stale:hostState(h)==='Stale'})));
   const issues = containers.filter(needsAttention).length;
   $('summary').hidden = view !== 'containers' || (!snapshot && !fleet) || !hosts.length;
   $('total').textContent = containers.length;
@@ -108,10 +132,11 @@ function render() {
   $('notice').className = 'alert' + (lastError ? ' error' : '');
   $('notice').textContent = lastError || (stale ? 'No report from ' + host.name + ' for ' + duration(age(snapshot.receivedAt)) + '. These are its last known states. Check the collector on this host.' : setupSuccess);
   const query = $('search').value.trim().toLowerCase();
-  const visible = containers.filter(c => (!attentionOnly || needsAttention(c)) && (!query || (c.name + ' ' + c.image + ' ' + (c.hostName||'')).toLowerCase().includes(query)))
+  const visible = containers.filter(c => (!attentionOnly || needsAttention(c)) && (!query || [c.name,c.image,c.hostName,c.composeProject,c.composeService].join(' ').toLowerCase().includes(query)))
     .sort((a, b) => Number(needsAttention(b)) - Number(needsAttention(a)) || a.name.localeCompare(b.name));
   $('table-tools').hidden = view !== 'containers' || !containers.length;
   $('attention-filter').setAttribute('aria-pressed', String(attentionOnly));
+  $('compose-group').setAttribute('aria-pressed',String(groupByProject));
   $('filter-count').textContent = issues;
   $('table-wrap').hidden = view !== 'containers' || !visible.length;
   $('table-footer').hidden = view !== 'containers' || !containers.length;
@@ -146,6 +171,7 @@ function render() {
   renderRows(visible);
   renderPanels();
   updateEnrollment();
+  updateMaintenance();
 }
 async function refresh(selectName) {
   if (loading) return;
@@ -192,7 +218,7 @@ function renderPanels() {
   const current=alerts(); $('alert-count').textContent=current.length;
   if(view==='alerts') {
     $('alerts-status').textContent=current.length?current.length+' current alert(s)':'No current alerts for this view.';
-    $('alerts-list').replaceChildren(...current.map(a=>{const li=node('li');const button=node('button','event-link',a.host.name);button.onclick=()=>{view='containers';selectHost(a.host.id);};li.append(button,node('p','',a.text));return li;}));
+    $('alerts-list').replaceChildren(...current.map(a=>{const li=node('li');const button=node('button','event-link',a.host.name);button.onclick=()=>{view='containers';selectHost(a.host.id);};li.append(button,node('p','',a.text));if(inMaintenance(a.host))li.append(node('p','input-help',maintenanceText(a.host)));return li;}));
   }
   if(view==='activity') {
     $('activity-status').textContent=historyError || (historyLoading?'Loading recent activity…':!historyEvents.length?'No recent changes recorded. Activity will appear as reports arrive.':'Showing '+historyEvents.length+' recent events.');
@@ -217,16 +243,16 @@ async function mutate(path,method,data) {
 }
 function showError(id,error) {$(id).textContent=error.message;$(id).hidden=false;}
 function setupStage(stage) {
-  for(const [index,id] of ['name','deploy','report'].entries()) {
+  for(const [index,id] of ['name','deploy','start','report'].entries()) {
     $('step-'+id).removeAttribute('aria-current');
     if(index===stage)$('step-'+id).setAttribute('aria-current','step');
   }
-  $('setup-form').hidden=stage!==0; $('setup-deploy').hidden=stage!==1; $('setup-wait').hidden=stage!==2;
+  $('setup-form').hidden=stage!==0; $('setup-deploy').hidden=stage!==1; $('setup-start').hidden=stage!==2; $('setup-wait').hidden=stage!==3;
 }
 function updateCommands() {
   const docker=$('sudo-docker').checked?'sudo docker':'docker';
   $('deploy-commands').textContent='cd /srv/docker/docker-dashboard-collector &&\n'+docker+' compose config --quiet &&\n'+docker+' compose up -d';
-  $('transfer-commands').textContent='test ! -e /srv/docker/docker-dashboard-collector &&\nsudo install -d -m 0700 -o "$(id -u)" -g "$(id -g)" /srv/docker/docker-dashboard-collector &&\ncd /srv/docker/docker-dashboard-collector &&\n(umask 077\n tar --keep-old-files -xf ~/Downloads/crowsnest-collector.tar &&\n printf \'COLLECTOR_UID=%s\\nCOLLECTOR_GID=%s\\n\' "$(id -u)" "$(id -g)" > .env) &&\n'+docker+' compose config --quiet &&\n'+docker+' compose up -d';
+  $('transfer-commands').textContent='test ! -e /srv/docker/docker-dashboard-collector &&\nsudo install -d -m 0700 -o "$(id -u)" -g "$(id -g)" /srv/docker/docker-dashboard-collector &&\ncd /srv/docker/docker-dashboard-collector &&\n(umask 077\n tar --keep-old-files -xf ~/Downloads/crowsnest-collector.tar &&\n printf \'COLLECTOR_UID=%s\\nCOLLECTOR_GID=%s\\n\' "$(id -u)" "$(id -g)" > .env)';
   $('log-command').textContent='cd /srv/docker/docker-dashboard-collector\n'+docker+' compose logs --tail=30 collector';
 }
 function openSetup() {
@@ -259,7 +285,7 @@ function updateEnrollment() {
     $('enrollment-status').textContent=connected?'Connected. The latest report contains '+host.snapshot.containers.length+' containers.':lastError||'Checking every 15 seconds while your collector starts.';
     $('enrollment-help').hidden=connected;$('log-command').parentElement.hidden=connected;
     $('finish-setup').textContent=connected?'View host':'Close';
-    if(connected)setupStage(2);
+    if(connected){const changed=$('setup-wait').hidden;setupStage(3);if(changed)$('finish-setup').focus();}
   }
   const managed=hosts.find(h=>h.id===managedId);
   if(rotationRevision!==null && managed) {
@@ -279,7 +305,7 @@ async function copyCommands(commandId,buttonId,label) {
 }
 async function copySetup() {
   if(!setupCommand)return;
-  try{await navigator.clipboard.writeText(setupCommand);$('setup-copy-fallback').hidden=true;$('setup-copy-text').value='';$('setup-copy-status').textContent='Copied. Paste into Bash on this host.';}
+  try{await navigator.clipboard.writeText(setupCommand);$('setup-copy-fallback').hidden=true;$('setup-copy-text').value='';$('setup-copy-status').textContent='Copied. Paste and run in Bash on '+$('setup-host-name').textContent+'. Continue when the terminal says files are prepared.';}
   catch{$('setup-copy-status').textContent='Clipboard access was blocked. Copy the setup below.';$('setup-copy-fallback').hidden=false;$('setup-copy-text').value=setupCommand;$('setup-copy-text').focus();$('setup-copy-text').select();}
 }
 $('add').onclick=openSetup;$('empty-add').onclick=openSetup;
@@ -289,11 +315,14 @@ $('refresh').onclick=()=>refresh();$('fleet-view').onclick=()=>selectHost(null);
 $('search').oninput=render;$('sudo-docker').onchange=updateCommands;$('copy-setup').onclick=copySetup;
 $('copy-deploy').onclick=()=>copyCommands('deploy-commands','copy-deploy','Copy start commands');
 $('copy-transfer').onclick=()=>copyCommands('transfer-commands','copy-transfer','Copy commands');
-$('wait-report').onclick=()=>{setupStage(2);updateEnrollment();refresh();$('finish-setup').focus();};
-$('back-deploy').onclick=()=>setupStage(1);
+$('files-prepared').onclick=()=>{setupStage(2);$('copy-deploy').focus();};
+$('back-prepare').onclick=()=>{setupStage(1);$('copy-setup').focus();};
+$('wait-report').onclick=()=>{setupStage(3);updateEnrollment();refresh();$('finish-setup').focus();};
+$('back-deploy').onclick=()=>{setupStage(2);$('copy-deploy').focus();};
 $('resume-setup').onclick=resumeSetup;
 for(const key of ['containers','activity','alerts'])$('view-'+key).onclick=()=>{view=key;render();if(key==='activity')loadHistory();if(key==='alerts')loadNotifications();};
 $('attention-filter').onclick=()=>{attentionOnly=!attentionOnly;render();};
+$('compose-group').onclick=()=>{groupByProject=!groupByProject;render();};
 $('clear-filters').onclick=()=>{attentionOnly=false;$('search').value='';render();$('search').focus();};
 $('hostname').oninput=()=>{$('hostname').setCustomValidity('');$('hostname').removeAttribute('aria-invalid');};
 $('setup-form').onsubmit=async event=>{
@@ -309,11 +338,35 @@ $('manage-host').onclick=()=>{
   $('management-title').textContent='Manage '+host.name;$('rename-host').value=host.name;
   $('remove-name').value='';$('remove-host').disabled=true;$('remove-label').textContent='Enter “'+host.name+'” to confirm';
   $('management-message').hidden=true;$('rotation-result').hidden=true;
+  $('collector-update').hidden=true;$('collector-update-command').value='';$('collector-update-status').textContent='';updateMaintenance();
   for(const details of $('management').querySelectorAll('details'))details.open=false;
   $('management').showModal();$('rename-host').focus();
 };
 $('close-management').onclick=()=>$('management').close();
-$('management').addEventListener('close',()=>{if(configUrl){URL.revokeObjectURL(configUrl);configUrl=null;}$('config-download').removeAttribute('href');rotationRevision=null;});
+$('management').addEventListener('close',()=>{if(configUrl){URL.revokeObjectURL(configUrl);configUrl=null;}$('config-download').removeAttribute('href');$('collector-update-command').value='';rotationRevision=null;});
+function updateMaintenance() {
+  const host=hosts.find(h=>h.id===managedId);if(!host)return;
+  const active=inMaintenance(host);
+  $('maintenance-status').textContent=active?maintenanceText(host)+'.':'Automatic notifications follow the fleet settings.';
+  $('maintenance-end').hidden=!active;$('maintenance-save').textContent=active?'Reset pause timer':'Pause notifications';
+}
+async function setMaintenance(minutes) {
+  $('maintenance-save').disabled=true;$('maintenance-end').disabled=true;$('management-message').hidden=true;
+  try{await mutate('/api/hosts/'+managedId+'/maintenance','POST',{minutes});await refresh();}
+  catch(error){showError('management-message',error);}
+  finally{$('maintenance-save').disabled=false;$('maintenance-end').disabled=false;}
+}
+$('maintenance-save').onclick=()=>setMaintenance(Number($('maintenance-duration').value));
+$('maintenance-end').onclick=()=>setMaintenance(0);
+$('prepare-update').onclick=async()=>{
+  $('prepare-update').disabled=true;$('management-message').hidden=true;
+  try{const data=await (await mutate('/api/hosts/'+managedId+'/collector','POST',{format:'update'})).json();if(typeof data.updateCommand!=='string')throw new Error('Incomplete update response. Try again.');$('collector-update-command').value=data.updateCommand;$('collector-update').hidden=false;$('copy-update').focus();}
+  catch(error){showError('management-message',error);}finally{$('prepare-update').disabled=false;}
+};
+$('copy-update').onclick=async()=>{
+  try{await navigator.clipboard.writeText($('collector-update-command').value);$('collector-update-status').textContent='Copied. Paste and run on the host as the installation owner.';}
+  catch{$('collector-update-status').textContent='Clipboard blocked. Select and copy the command above.';$('collector-update-command').focus();$('collector-update-command').select();}
+};
 $('rename-form').onsubmit=async event=>{
   event.preventDefault();$('rename-save').disabled=true;$('management-message').hidden=true;
   try{await mutate('/api/hosts/'+managedId,'PATCH',{name:$('rename-host').value.trim()});$('management').close();setupSuccess='Host name updated.';await refresh();}
@@ -360,6 +413,17 @@ if (context?.registerTool) {
   window.addEventListener('pagehide', () => lifecycle.abort(), {once: true});
 }
 let notificationBusy=false, notificationConfigured=false;
+function setSubscription(value) {
+  let url;
+  try{url=new URL(value);if(url.protocol!=='https:' || url.username || url.password || url.search || url.hash || !/^\/[a-zA-Z0-9_-]{1,64}$/.test(url.pathname))url=null;}catch{}
+  $('notification-subscription').hidden=!url;$('notification-topic').value=url?url.href:'';
+  $('subscription-status').textContent='';$('ntfy-android').removeAttribute('href');
+  if(url)$('ntfy-android').href='ntfy://'+url.host+url.pathname+'?display=Crowsnest';
+}
+$('copy-topic').onclick=async()=>{
+  try{await navigator.clipboard.writeText($('notification-topic').value);$('subscription-status').textContent='Topic URL copied. Add it as a subscription in ntfy.';}
+  catch{$('subscription-status').textContent='Clipboard blocked. Select and copy the topic URL above.';$('notification-topic').focus();$('notification-topic').select();}
+};
 function notificationControls() {
   for(const id of ['notifications-enabled','notifications-recoveries','notifications-save','notifications-test'])$(id).disabled=notificationBusy || !notificationConfigured;
 }
@@ -369,12 +433,12 @@ async function loadNotifications() {
   try {
     const response=await fetch('/api/notifications',{cache:'no-store',signal:AbortSignal.timeout(10000)});
     if(!response.ok)throw new Error('Unable to load ntfy settings. Open Alerts again to retry.');
-    const data=await response.json();notificationConfigured=data.configured;
+    const data=await response.json();notificationConfigured=data.configured;setSubscription(data.destination);
     $('notification-destination').textContent=data.destination?'Topic: '+data.destination:'ntfy is not configured. Set NTFY_URL and the secret NTFY_TOKEN in the Site runtime, then publish.';
     $('notifications-enabled').checked=data.enabled;$('notifications-recoveries').checked=data.recoveries;
     $('notification-delivery').textContent=data.lastError?'Delivery failed: '+data.lastError+'. Automatic alerts retry with backoff. Check ntfy access and the runtime token.':data.lastSuccessAt?'Last accepted by ntfy: '+new Date(data.lastSuccessAt).toLocaleString()+'.':'No notifications have been accepted yet.';
     $('notification-delivery').textContent+=' '+(data.lastSweepAt?'Last background check: '+new Date(data.lastSweepAt).toLocaleString()+'.':'No background check recorded. Configure a scheduled sweep for stale-host alerts.');
-  }catch(error){$('notification-message').textContent=error.message;}
+  }catch(error){notificationConfigured=false;setSubscription(null);$('notification-destination').textContent='Notification settings unavailable.';$('notification-message').textContent=error.message;}
   finally{notificationBusy=false;notificationControls();}
 }
 $('notification-form').onsubmit=async event=>{

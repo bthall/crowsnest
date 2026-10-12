@@ -4,10 +4,10 @@ Crowsnest can publish fleet alerts to [ntfy](https://docs.ntfy.sh/publish/). Del
 
 ## Configure a private destination
 
-1. Choose an authenticated ntfy server and a dedicated topic. Create a regular publisher account with **write-only** access to that exact topic, then issue its bearer token. Keep subscriber credentials separate. See [ntfy access control](https://docs.ntfy.sh/config/#access-control).
-2. Through Sites runtime configuration, set `NTFY_URL` to the full topic URL, for example `https://ntfy.example.com/crowsnest`. Store `NTFY_TOKEN` as a **secret**. Never put either credential in the hosting manifest, browser JavaScript, or collector configuration.
+1. Choose an authenticated ntfy server and a dedicated, hard-to-guess topic. Generate at least 128 random bits, for example with `openssl rand -hex 16`, and prefix the result with `crowsnest-`. Create a regular publisher account with **write-only** access to that exact topic, then issue its bearer token. Keep subscriber credentials separate. See [ntfy access control](https://docs.ntfy.sh/config/#access-control).
+2. Through Sites runtime configuration, set `NTFY_URL` to the full topic URL, in the form `https://ntfy.example.com/crowsnest-<32-random-hex-characters>`. Store `NTFY_TOKEN` as a **secret**. Never put either credential in the hosting manifest, browser JavaScript, or collector configuration.
 3. Publish the matching Site version to apply runtime changes. The destination must be HTTPS on a DNS hostname, with one topic path and no credentials, query, fragment, custom port, or reserved ntfy route. The server must be reachable from the hosted Worker. Redirects are rejected. The operator must trust its DNS and access controls.
-4. Open **Alerts → ntfy notifications**. Subscribe to the displayed topic in your ntfy app with your subscriber account. Choose **Send test notification**, then enable **Send fleet notifications** and save. `NTFY_ENABLED=true` can set the initial enabled default; saved dashboard settings override it.
+4. Open **Alerts → ntfy notifications**. Choose **Copy topic URL** and add that server/topic in your ntfy app with your subscriber account. On Android, **Open in ntfy (Android)** opens the subscription through [ntfy’s documented app link](https://docs.ntfy.sh/subscribe/phone/#deep-linking). Other devices can use the copied URL. The app link contains no publisher token. Choose **Send test notification**, then enable **Send fleet notifications** and save. `NTFY_ENABLED=true` can set the initial enabled default; saved dashboard settings override it.
 5. Configure and verify a background sweep as described below. A URL by itself does not create a schedule.
 
 For an authenticated server, a topic name is not a password. On a public server, a guessable topic exposes fleet details. Prefer authentication for a private fleet. Anonymous publishing is supported when `NTFY_TOKEN` is absent, but topic confidentiality then depends on the server.
@@ -24,6 +24,10 @@ Messages contain the host name and affected container names/state/health, with a
 Each host's changes are grouped into a message, limited to ten displayed changes and 3,500 UTF-8 bytes. Unchanged reports do not send repeated alerts. A changed destination starts a new baseline and can send currently active issues. Pausing stops automatic delivery; the explicit test remains available. Re-enabling compares current issues with the last delivered state.
 
 The Worker verifies ntfy's message acknowledgement before recording success. **Accepted by ntfy** does not prove delivery to a phone: subscriptions, mobile permissions, and ntfy push configuration still matter. A failed send preserves the transition for retry, with exponential backoff from 30 seconds up to 15 minutes. New reports and scheduled sweeps drive retries; superseded transitions are coalesced to current state. R2 state is not transactional: overlapping work or lost acknowledgements can duplicate a message. This is best-effort operational notification delivery, without an incident paging SLA.
+
+## Per-host maintenance
+
+**Manage host → Maintenance mode** pauses that host’s automatic alerts and recoveries for a bounded duration. It leaves collection, health, and activity visible and does not stop the minute checker. Expiry or early end resumes current-state evaluation on the next report or sweep; suppressed transient issues do not send recoveries. See [maintenance details](deployment.md#pause-notifications-during-maintenance).
 
 ## Unattended stale-host checks
 

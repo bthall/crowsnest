@@ -1,10 +1,11 @@
 # Screenshot provenance
 
-The README images are browser captures of the Crowsnest `0.5.0` interface.
+The README images are browser captures of the Crowsnest `0.6.0` interface.
 All hosts, container names, images, counts, and report ages are fictional examples from `scripts/preview.mjs`. The captures contain no production fleet data, account details, URLs with credentials, or downloaded setup scripts.
 
 - Desktop: Chromium, 1440 × 1120 viewport, full page.
 - Mobile layout: Chromium, 390 × 844 viewport, full page.
+- Desktop and mobile captures show Compose project grouping; one fictional host is in timed maintenance.
 - Host setup: Chromium, 1440 × 1120 viewport, dialog capture. Enrollment uses a synthetic API response and test credentials; the capture shows no credential values.
 - Captured on 2026-10-12 (America/New_York).
 

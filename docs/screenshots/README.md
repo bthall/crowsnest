@@ -1,6 +1,6 @@
 # Screenshot provenance
 
-The overview and enrollment README images are browser captures of Crowsnest `0.6.0`. `container-details-desktop.png` shows the `0.7.0` interface.
+The overview, enrollment, and container-details README images are browser captures of Crowsnest `0.7.1`.
 All hosts, container names, images, counts, and report ages are fictional examples from `scripts/preview.mjs`. The captures contain no production fleet data, account details, URLs with credentials, or downloaded setup scripts.
 
 - Container details: Chromium, 1440 × 1120 viewport, full page, showing a fictional unhealthy container and retained changes.
@@ -12,4 +12,4 @@ All hosts, container names, images, counts, and report ages are fictional exampl
 
 Run `npm run preview`, then use the Codex Playwright skill or a local browser to capture the page at these widths. Save overview captures as `dashboard-desktop.png` and `dashboard-mobile.png`; choose a container name for `container-details-desktop.png`, preserving the full interface. Do not use image generation to fabricate interface details.
 
-The mobile image verifies the responsive layout in Chromium; it is not an iOS Safari or Android-device certification. Browser interactions and axe-core checks cover desktop, mobile, and the setup dialog. These checks complement keyboard and visual review.
+The mobile image verifies the responsive layout in Chromium; it is not an iOS Safari or Android-device certification. Browser interactions and axe-core checks cover widths of 1440, 1024, 768, 390, and 320 pixels, with no detected WCAG A/AA violations in the audited surfaces. Enrollment, delayed dialog responses, clipboard fallback, first-report confirmation, stale uptime, and keyboard focus were checked using synthetic responses. These checks complement visual review and do not establish full accessibility conformance.

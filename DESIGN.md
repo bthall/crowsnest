@@ -9,7 +9,7 @@ Treat the dashboard as an operating tool. Keep the crow mark, slate surfaces, wa
 
 ## Layout and interaction
 
-- Hosts at the left on desktop, horizontally scrollable on phones.
+- Hosts at the left on desktop; All hosts and individual hosts share one horizontally scrollable selector on phones and tablets.
 - Selected-host summary attached to its container table.
 - All hosts is the default fleet view; host selection scopes containers, activity, and alerts.
 - Search matches container names, images, and host names in fleet view. The attention filter means unhealthy, restarting, or dead.
@@ -18,6 +18,9 @@ Treat the dashboard as an operating tool. Keep the crow mark, slate surfaces, wa
 - ntfy subscription help offers topic copying and an Android app link, with separate subscriber credentials and explicit phone receipt confirmation.
 - Preserve host-button focus during polling and help disclosure while reading.
 - Use four explicit enrollment stages: name the host, prepare files, review/start the collector, and confirm an actual report. Copying does not advance the installation state. Keep deployment steps available if a report is delayed; allow an awaiting host to continue setup.
+- Each terminal step names its target host and uses a short numbered sequence. Keep file preparation, container startup, and first-report confirmation distinct.
+- Uptime freezes at the report timestamp when a host is stale or the dashboard cannot refresh; label the last reported value in the table and details.
+- Closing or reopening a dialog invalidates its pending UI responses. Results for one host must never populate another host's dialog.
 - Explain Docker access and credentials before setup. The primary action copies a private Bash block that prepares inspectable Compose files; starting containers is separate. Do not render credentials in ordinary instructions or static assets. Clipboard failure reveals a selected, read-only setup field only on request. Clear that field and the in-memory setup on dialog close. The alternative archive contains the same private configuration.
 - Host removal requires an exact-name confirmation. Reporting-token replacement leaves the current token usable until successful activation.
 - Keep setup explanations in contextual help and the first-run state.

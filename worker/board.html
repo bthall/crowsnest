@@ -31,8 +31,10 @@
     <div class="workspace">
       <aside class="host-sidebar" aria-labelledby="hosts-heading">
         <div class="sidebar-heading"><h2 id="hosts-heading">Hosts</h2><span id="host-count" class="count">—</span></div>
-        <button id="fleet-view" class="host selected" aria-pressed="true"><span class="host-name"><strong>All hosts</strong></span><span class="host-state">Fleet overview</span></button>
-        <nav id="hosts" class="host-list" aria-label="Docker hosts"><p>Loading hosts…</p></nav>
+        <div class="host-selector">
+          <button id="fleet-view" class="host selected" aria-pressed="true"><span class="host-name"><strong>All hosts</strong></span><span class="host-state">Fleet overview</span></button>
+          <nav id="hosts" class="host-list" aria-label="Docker hosts"><p>Loading hosts…</p></nav>
+        </div>
       </aside>
       <section id="containers" class="surface" aria-labelledby="host-title" tabindex="-1" aria-busy="true">
         <div class="surface-heading">
@@ -88,18 +90,19 @@
   </main>
   <dialog id="setup" aria-labelledby="setup-title" aria-describedby="setup-description">
     <div class="dialog-heading"><h2 id="setup-title">Connect a Docker host</h2><button type="button" id="cancel" class="close-button" aria-label="Close host setup"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
-    <p id="setup-description">Deploy a small collector with Docker Compose, then confirm its first report.</p>
-    <ol class="setup-steps" aria-label="Enrollment progress"><li id="step-name" aria-current="step">1. Name host</li><li id="step-deploy">2. Prepare files</li><li id="step-start">3. Start collector</li><li id="step-report">4. Confirm connection</li></ol>
+    <p id="setup-description">Name your host here. Prepare and start its collector in a terminal on that host.</p>
+    <ol class="setup-steps" aria-label="Enrollment progress"><li id="step-name" aria-current="step"><span>1</span>Name host</li><li id="step-deploy"><span>2</span>Prepare files</li><li id="step-start"><span>3</span>Start collector</li><li id="step-report"><span>4</span>Confirm report</li></ol>
     <form id="setup-form">
       <label for="hostname">Host name</label>
       <input id="hostname" name="hostname" placeholder="e.g. hedwig" maxlength="64" required autocomplete="off" aria-describedby="hostname-help setup-message">
-      <p class="input-help" id="hostname-help">Letters, numbers, spaces, dots, dashes, and underscores. Up to 64 characters.</p>
+      <p class="input-help" id="hostname-help">Use a unique name you recognize. Up to 64 letters, numbers, spaces, dots, dashes, or underscores.</p>
       <div class="install-note"><strong>What runs on this host</strong><p>Two containers: a Python collector and a restricted HAProxy socket proxy. Status reads only. No published ports, container logs, or environment variables.</p></div>
       <div class="dialog-actions"><button type="button" id="cancel-bottom" class="secondary">Cancel</button><button class="primary" type="submit" id="prepare">Prepare setup</button></div>
     </form>
     <div id="setup-deploy" hidden>
       <h3>Prepare files on <span id="setup-host-name"></span></h3>
-      <p>Open a Bash terminal on this host. Copy the setup, paste it there, and run it as your normal user. It creates files under <code>/srv/docker/docker-dashboard-collector</code> and prints “Private Compose files prepared”. The collector starts in the next step.</p>
+      <ol class="setup-instructions"><li>Open a <strong>Bash terminal on <span id="setup-terminal-host"></span></strong>, signed in as your normal user.</li><li>Copy the setup below, paste it into that terminal, and run it.</li><li>Wait for <strong>Private Compose files prepared</strong>, then continue here.</li></ol>
+      <p class="input-help">Files go in <code>/srv/docker/docker-dashboard-collector</code>. This step prepares files; the next step starts the containers.</p>
       <div class="setup-copy-actions"><button id="copy-setup" type="button" class="primary">Copy setup</button><span id="setup-copy-status" role="status"></span></div>
       <p class="input-help">Includes this host’s private reporting credentials. Keep the clipboard and any terminal history containing it private.</p>
       <div id="setup-copy-fallback" hidden><label for="setup-copy-text">Select and copy this setup</label><textarea id="setup-copy-text" readonly rows="7" spellcheck="false"></textarea></div>
@@ -109,7 +112,8 @@
       <div class="dialog-actions"><button id="files-prepared" type="button" class="primary">Files prepared — continue</button></div>
     </div>
     <div id="setup-start" hidden>
-      <h3>Review and start the collector</h3><p>On the host, review <code>compose.yaml</code>, <code>collector.py</code>, and <code>proxy.cfg</code> in the installation directory. Then paste and run the start commands in the same terminal.</p>
+      <h3>Start the collector on <span id="setup-start-host"></span></h3>
+      <ol class="setup-instructions"><li>Review <code>compose.yaml</code>, <code>collector.py</code>, and <code>proxy.cfg</code> in the installation directory.</li><li>Choose whether your Docker commands need sudo, then copy and run the commands below in the <strong>same host terminal</strong>.</li><li>After Docker Compose finishes, choose <strong>I’ve started the collector</strong> to check its first report here.</li></ol>
       <label for="sudo-docker" class="checkbox-label"><input id="sudo-docker" type="checkbox" checked> My Docker commands require sudo</label>
       <div class="command-heading"><strong>Start the collector</strong><button id="copy-deploy" type="button" class="secondary">Copy start commands</button></div><pre><code id="deploy-commands"></code></pre>
       <p class="input-help">Docker Compose downloads the images and starts two containers. A successful command does not confirm connection; the next step waits for an actual report.</p>

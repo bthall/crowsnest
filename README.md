@@ -23,7 +23,7 @@ Crowsnest is a private dashboard for Docker host and container status. A small o
 </details>
 
 <details>
-<summary>Container details in 0.7.0</summary>
+<summary>Container details</summary>
 <p><img src="docs/screenshots/container-details-desktop.png" alt="Crowsnest container details with state, health, Compose metadata, timestamps, and recent changes" width="960"></p>
 </details>
 

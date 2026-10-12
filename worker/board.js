@@ -3,7 +3,7 @@ let lastError = '', setupSuccess = '', attentionOnly = false;
 let helpInitialized = false, groupByProject = false;
 let view = 'containers', historyEvents = [], historyError = '', historyLoading = false, historySequence = 0;
 let enrollmentId = null, packageUrl = null, configUrl = null, managedId = null, rotationRevision = null, rotationExpiry = 0;
-let setupCommand = '';
+let setupCommand = '', setupSession = 0, managementSession = 0;
 let availableCollectorVersion = null, collectorUpdateTarget = null, collectorUpdateRequestedAt = 0, collectorUpdatePreviousVersion = null, collectorUpdateBusy = false;
 let detailSelection = null, detailEvents = [], detailHistoryError = '', detailHistoryLoading = false, detailHistorySequence = 0, detailHistoryController = null, detailLegacyMatches = false;
 const $ = id => document.getElementById(id);
@@ -91,19 +91,23 @@ function renderRows(containers) {
       row.append(heading);rows.push(row);
     }
     for(const c of group) {
-    const row = node('tr'), name = node('td');
-    const uptime = c.state === 'running' && Date.parse(c.startedAt) > 0 ? duration(age(c.startedAt)) : '—';
+    const lastKnown=c.stale || !!lastError;
+    const row = node('tr', (needsAttention(c)?'row-attention ':'')+(lastKnown?'row-stale':'')), name = node('td');
+    const observedAt=lastKnown?Date.parse(c.reportAt):Date.now();
+    const uptime = c.state === 'running' && Date.parse(c.startedAt) > 0 ? duration(Math.max(0,Math.floor((observedAt-Date.parse(c.startedAt))/1000))) : '—';
     const link=node('button','container-link',c.name);
     link.dataset.containerKey=c.hostId+':'+c.id;link.setAttribute('aria-label','View '+c.name+' on '+c.hostName);link.onclick=()=>openContainerDetails(c.hostId,c.id);
     name.append(link, node('span', 'image', c.image));
-    if(selected===null) name.append(node('span','row-host',c.hostName+(c.stale?' · last known status':'')));
-    if(c.composeService)name.append(node('span','image','Service: '+c.composeService));
-    name.append(node('span', 'mobile-details', 'Uptime ' + uptime + ' · ' + c.restarts + ' restarts'));
+    if(selected===null) name.append(node('span','row-host',c.hostName+(lastKnown?' · last known status':'')));
+    if(c.composeService && c.composeService!==c.name)name.append(node('span','image','Service: '+c.composeService));
+    name.append(node('span', 'mobile-details', 'Uptime ' + uptime + (lastKnown && uptime!=='—'?' at last report':'')+' · ' + c.restarts + ' restarts'));
     const state = node('td');
     state.append(node('span', 'pill ' + (c.state === 'running' ? 'good' : ['restarting', 'dead'].includes(c.state) ? 'bad' : ''), c.state));
     const health = node('td');
     health.append(node('span', c.health === 'none' ? 'no-check' : 'pill ' + (c.health === 'healthy' ? 'good' : c.health === 'unhealthy' ? 'bad' : 'warn'), c.health === 'none' ? 'No check' : c.health));
-    row.append(name, state, health, node('td', 'desktop-detail', uptime), node('td', 'desktop-detail number', c.restarts));
+    const uptimeCell=node('td','desktop-detail',uptime);
+    if(lastKnown && uptime!=='—')uptimeCell.append(node('span','uptime-note','At last report'));
+    row.append(name, state, health, uptimeCell, node('td', 'desktop-detail number', c.restarts));
     rows.push(row);
     }
   }
@@ -133,12 +137,12 @@ function render() {
   $('containers').setAttribute('aria-busy', String(!loaded && loading));
   $('host-title').textContent = host ? host.name : 'All hosts';
   $('table-caption').textContent = host ? 'Containers on ' + host.name : 'Containers across all Docker hosts';
-  $('engine').textContent = snapshot ? 'Docker Engine ' + snapshot.engineVersion : host ? 'Start the collector to begin reporting' : loaded ? 'Search containers, images, or hosts across your fleet' : 'Loading reports…';
+  $('engine').textContent = snapshot ? 'Docker Engine ' + snapshot.engineVersion : host ? 'Start the collector to begin reporting' : loaded ? 'Latest collector reports across your fleet' : 'Loading reports…';
   $('host-status').textContent = host ? hostState(host) : loaded ? reporting + ' reporting' : 'Loading';
   $('host-status').className = 'status' + (stale ? ' warn' : snapshot ? ' good' : '');
   $('manage-host').hidden = !host;
   $('resume-setup').hidden = !host || !!snapshot;
-  const containers = hosts.filter(h=>fleet || h.id===selected).flatMap(h=>(h.snapshot?.containers||[]).map(c=>({...c,hostId:h.id,hostName:h.name,stale:hostState(h)==='Stale'})));
+  const containers = hosts.filter(h=>fleet || h.id===selected).flatMap(h=>(h.snapshot?.containers||[]).map(c=>({...c,hostId:h.id,hostName:h.name,reportAt:h.snapshot.receivedAt,stale:hostState(h)==='Stale'})));
   const issues = containers.filter(needsAttention).length;
   $('summary').hidden = inspecting || view !== 'containers' || (!snapshot && !fleet) || !hosts.length;
   $('total').textContent = containers.length;
@@ -341,8 +345,11 @@ function showError(id,error) {$(id).textContent=error.message;$(id).hidden=false
 function setupStage(stage) {
   for(const [index,id] of ['name','deploy','start','report'].entries()) {
     $('step-'+id).removeAttribute('aria-current');
+    $('step-'+id).dataset.complete=String(index<stage);
     if(index===stage)$('step-'+id).setAttribute('aria-current','step');
   }
+  const name=$('setup-host-name').textContent;
+  $('setup-description').textContent=stage===0?'Name your host here. Prepare and start its collector in a terminal on that host.':stage===3?'Crowsnest checks for a real collector report from '+name+'.':'Run these steps in a terminal on '+name+', then continue here.';
   $('setup-form').hidden=stage!==0; $('setup-deploy').hidden=stage!==1; $('setup-start').hidden=stage!==2; $('setup-wait').hidden=stage!==3;
 }
 function updateCommands() {
@@ -352,15 +359,22 @@ function updateCommands() {
   $('log-command').textContent='cd /srv/docker/docker-dashboard-collector\n'+docker+' compose logs --tail=30 collector';
 }
 function openSetup() {
-  enrollmentId=null;
+  setupSession++;enrollmentId=null;clearSetupPackage();
+  $('prepare').disabled=false;$('prepare').textContent='Prepare setup';
   $('setup-form').reset();$('sudo-docker').checked=true;$('hostname').setCustomValidity('');
   $('hostname').removeAttribute('aria-invalid');$('setup-message').hidden=true;
   setupStage(0);$('setup').showModal();$('hostname').focus();
 }
-async function preparePackage(response,name,resumed=false) {
-  if(!$('setup').open){await response.body?.cancel();return;}
+function setupCurrent(session) {return $('setup').open && setupSession===session;}
+function managementCurrent(session,id) {return $('management').open && managementSession===session && managedId===id;}
+function clearSetupPackage() {
+  if(packageUrl){URL.revokeObjectURL(packageUrl);packageUrl=null;}
+  setupCommand='';$('setup-copy-text').value='';$('setup-copy-fallback').hidden=true;$('setup-copy-status').textContent='';$('package-download').removeAttribute('href');
+}
+async function preparePackage(response,name,resumed,session) {
+  if(!setupCurrent(session)){await response.body?.cancel();return;}
   const data=await response.json();
-  if(!$('setup').open)return;
+  if(!setupCurrent(session))return;
   if(!/^[a-f0-9-]{36}$/.test(data.hostId) || typeof data.setupCommand!=='string' || !data.setupCommand || typeof data.packageBase64!=='string')throw new Error('The setup response is incomplete. Close and choose Continue setup.');
   const archive=Uint8Array.from(atob(data.packageBase64),c=>c.charCodeAt(0));
   if(packageUrl)URL.revokeObjectURL(packageUrl);
@@ -369,10 +383,11 @@ async function preparePackage(response,name,resumed=false) {
   $('copy-deploy').textContent='Copy start commands';$('copy-transfer').textContent='Copy commands';
   packageUrl=URL.createObjectURL(new Blob([archive],{type:'application/x-tar'}));
   $('package-download').href=packageUrl;$('setup-host-name').textContent=name;
+  $('setup-terminal-host').textContent=name;$('setup-start-host').textContent=name;
   $('setup-expiry').textContent=resumed?'Start this collector within ten minutes. If that window expires, close and choose Continue setup again.':'';
   updateCommands(); setupStage(1);
   await refresh(name);
-  if($('setup').open)$('copy-setup').focus();
+  if(setupCurrent(session))$('copy-setup').focus();
 }
 function updateEnrollment() {
   if(enrollmentId && $('setup').open) {
@@ -391,9 +406,10 @@ function updateEnrollment() {
 async function resumeSetup() {
   const host=hosts.find(h=>h.id===selected);if(!host)return;
   openSetup();$('hostname').value=host.name;$('prepare').disabled=true;
-  try{await preparePackage(await mutate('/api/hosts/'+host.id+'/collector','POST',{format:'setup'}),host.name,true);}
-  catch(error){showError('setup-message',error);}
-  finally{$('prepare').disabled=false;}
+  const session=setupSession;
+  try{await preparePackage(await mutate('/api/hosts/'+host.id+'/collector','POST',{format:'setup'}),host.name,true,session);}
+  catch(error){if(setupCurrent(session))showError('setup-message',error);}
+  finally{if(setupCurrent(session))$('prepare').disabled=false;}
 }
 async function copyCommands(commandId,buttonId,label) {
   try{await navigator.clipboard.writeText($(commandId).textContent);$(buttonId).textContent='Copied';setTimeout(()=>$(buttonId).textContent=label,2000);}
@@ -406,7 +422,7 @@ async function copySetup() {
 }
 $('add').onclick=openSetup;$('empty-add').onclick=openSetup;
 for(const id of ['cancel','cancel-bottom','finish-setup'])$(id).onclick=()=>{$('setup').close();};
-$('setup').addEventListener('close',()=>{if(packageUrl){URL.revokeObjectURL(packageUrl);packageUrl=null;}setupCommand='';$('setup-copy-text').value='';$('setup-copy-fallback').hidden=true;$('setup-copy-status').textContent='';$('package-download').removeAttribute('href');});
+$('setup').addEventListener('close',()=>{if($('setup').open)return;setupSession++;enrollmentId=null;clearSetupPackage();});
 $('refresh').onclick=()=>refresh();$('fleet-view').onclick=()=>selectHost(null);
 $('search').oninput=render;$('sudo-docker').onchange=updateCommands;$('copy-setup').onclick=copySetup;
 $('copy-deploy').onclick=()=>copyCommands('deploy-commands','copy-deploy','Copy start commands');
@@ -425,12 +441,14 @@ $('setup-form').onsubmit=async event=>{
   event.preventDefault();const name=$('hostname').value.trim();
   if(!/^[a-zA-Z0-9][a-zA-Z0-9 ._-]{0,63}$/.test(name)){$('hostname').setCustomValidity('Start with a letter or number. Use letters, numbers, spaces, dots, dashes, or underscores.');$('hostname').reportValidity();return;}
   $('prepare').disabled=true;$('prepare').textContent='Preparing…';$('setup-message').hidden=true;
-  try{await preparePackage(await mutate('/api/hosts','POST',{name,format:'setup'}),name);}
-  catch(error){showError('setup-message',error);}
-  finally{$('prepare').disabled=false;$('prepare').textContent='Prepare setup';}
+  const session=setupSession;
+  try{await preparePackage(await mutate('/api/hosts','POST',{name,format:'setup'}),name,false,session);}
+  catch(error){if(setupCurrent(session))showError('setup-message',error);}
+  finally{if(setupCurrent(session)){$('prepare').disabled=false;$('prepare').textContent='Prepare setup';}}
 };
 $('manage-host').onclick=()=>{
-  const host=hosts.find(h=>h.id===selected);if(!host)return;managedId=host.id;
+  const host=hosts.find(h=>h.id===selected);if(!host)return;managementSession++;managedId=host.id;
+  collectorUpdateBusy=false;for(const id of ['rename-save','maintenance-save','maintenance-end','rotate-token'])$(id).disabled=false;
   $('management-title').textContent='Manage '+host.name;$('rename-host').value=host.name;
   $('remove-name').value='';$('remove-host').disabled=true;$('remove-label').textContent='Enter “'+host.name+'” to confirm';
   $('management-message').hidden=true;$('rotation-result').hidden=true;
@@ -439,7 +457,7 @@ $('manage-host').onclick=()=>{
   $('management').showModal();$('rename-host').focus();
 };
 $('close-management').onclick=()=>$('management').close();
-$('management').addEventListener('close',()=>{if(configUrl){URL.revokeObjectURL(configUrl);configUrl=null;}$('config-download').removeAttribute('href');$('collector-update-command').value='';collectorUpdateTarget=null;rotationRevision=null;});
+$('management').addEventListener('close',()=>{if($('management').open)return;managementSession++;managedId=null;if(configUrl){URL.revokeObjectURL(configUrl);configUrl=null;}$('config-download').removeAttribute('href');$('collector-update-command').value='';collectorUpdateTarget=null;rotationRevision=null;});
 function updateMaintenance() {
   const host=hosts.find(h=>h.id===managedId);if(!host)return;
   const active=inMaintenance(host);
@@ -447,42 +465,48 @@ function updateMaintenance() {
   $('maintenance-end').hidden=!active;$('maintenance-save').textContent=active?'Reset pause timer':'Pause notifications';
 }
 async function setMaintenance(minutes) {
+  const id=managedId, session=managementSession;
   $('maintenance-save').disabled=true;$('maintenance-end').disabled=true;$('management-message').hidden=true;
-  try{await mutate('/api/hosts/'+managedId+'/maintenance','POST',{minutes});await refresh();}
-  catch(error){showError('management-message',error);}
-  finally{$('maintenance-save').disabled=false;$('maintenance-end').disabled=false;}
+  try{await mutate('/api/hosts/'+id+'/maintenance','POST',{minutes});await refresh();}
+  catch(error){if(managementCurrent(session,id))showError('management-message',error);}
+  finally{if(managementCurrent(session,id)){$('maintenance-save').disabled=false;$('maintenance-end').disabled=false;}}
 }
 $('maintenance-save').onclick=()=>setMaintenance(Number($('maintenance-duration').value));
 $('maintenance-end').onclick=()=>setMaintenance(0);
 $('prepare-update').onclick=async()=>{
-  const id=managedId;collectorUpdateBusy=true;$('prepare-update').disabled=true;$('management-message').hidden=true;
-  try{const data=await (await mutate('/api/hosts/'+id+'/collector','POST',{format:'update'})).json();if(!$('management').open || managedId!==id)return;if(typeof data.updateCommand!=='string' || !validCollectorVersion(data.collectorVersion))throw new Error('Incomplete update response. Try again.');collectorUpdateTarget=data.collectorVersion;collectorUpdateRequestedAt=Date.now();collectorUpdatePreviousVersion=hosts.find(h=>h.id===id)?.snapshot?.collectorVersion;$('collector-update-command').value=data.updateCommand;$('collector-update').hidden=false;updateCollectorVersion();$('copy-update').focus();}
-  catch(error){if($('management').open && managedId===id)showError('management-message',error);}finally{collectorUpdateBusy=false;updateCollectorVersion();}
+  const id=managedId, session=managementSession;collectorUpdateBusy=true;$('prepare-update').disabled=true;$('management-message').hidden=true;
+  try{const data=await (await mutate('/api/hosts/'+id+'/collector','POST',{format:'update'})).json();if(!managementCurrent(session,id))return;if(typeof data.updateCommand!=='string' || !validCollectorVersion(data.collectorVersion))throw new Error('Incomplete update response. Try again.');collectorUpdateTarget=data.collectorVersion;collectorUpdateRequestedAt=Date.parse(hosts.find(h=>h.id===id)?.snapshot?.receivedAt)||0;collectorUpdatePreviousVersion=hosts.find(h=>h.id===id)?.snapshot?.collectorVersion;$('collector-update-command').value=data.updateCommand;$('collector-update').hidden=false;updateCollectorVersion();$('copy-update').focus();}
+  catch(error){if(managementCurrent(session,id))showError('management-message',error);}finally{if(managementCurrent(session,id)){collectorUpdateBusy=false;updateCollectorVersion();}}
 };
 $('copy-update').onclick=async()=>{
   try{await navigator.clipboard.writeText($('collector-update-command').value);$('collector-update-status').textContent='Copied. Paste and run on the host as the installation owner.';}
   catch{$('collector-update-status').textContent='Clipboard blocked. Select and copy the command above.';$('collector-update-command').focus();$('collector-update-command').select();}
 };
 $('rename-form').onsubmit=async event=>{
+  const id=managedId, session=managementSession;
   event.preventDefault();$('rename-save').disabled=true;$('management-message').hidden=true;
-  try{await mutate('/api/hosts/'+managedId,'PATCH',{name:$('rename-host').value.trim()});$('management').close();setupSuccess='Host name updated.';await refresh();}
-  catch(error){showError('management-message',error);}finally{$('rename-save').disabled=false;}
+  try{await mutate('/api/hosts/'+id,'PATCH',{name:$('rename-host').value.trim()});if(managementCurrent(session,id))$('management').close();setupSuccess='Host name updated.';await refresh();}
+  catch(error){if(managementCurrent(session,id))showError('management-message',error);}finally{if(managementCurrent(session,id))$('rename-save').disabled=false;}
 };
 $('remove-name').oninput=()=>{$('remove-host').disabled=$('remove-name').value!==hosts.find(h=>h.id===managedId)?.name;};
 $('remove-host').onclick=async()=>{
+  const id=managedId, session=managementSession;
   $('remove-host').disabled=true;
-  try{await mutate('/api/hosts/'+managedId,'DELETE',{confirmName:$('remove-name').value});$('management').close();selected=null;setupSuccess='Host removed. Stop its collector on the host with docker compose down.';await refresh();}
-  catch(error){showError('management-message',error);$('remove-host').disabled=false;}
+  try{await mutate('/api/hosts/'+id,'DELETE',{confirmName:$('remove-name').value});if(managementCurrent(session,id))$('management').close();if(selected===id)selected=null;setupSuccess='Host removed. Stop its collector on the host with docker compose down.';await refresh();}
+  catch(error){if(managementCurrent(session,id)){showError('management-message',error);$('remove-host').disabled=false;}}
 };
 $('rotate-token').onclick=async()=>{
+  const id=managedId, session=managementSession, revision=hosts.find(h=>h.id===managedId)?.credentialRevision||0;
   $('rotate-token').disabled=true;$('management-message').hidden=true;
   try {
-    const response=await mutate('/api/hosts/'+managedId+'/collector','POST',{format:'config'});
-    if(configUrl)URL.revokeObjectURL(configUrl);configUrl=URL.createObjectURL(await response.blob());
-    $('config-download').href=configUrl;rotationRevision=hosts.find(h=>h.id===managedId)?.credentialRevision||0;rotationExpiry=Date.now()+600000;
+    const response=await mutate('/api/hosts/'+id+'/collector','POST',{format:'config'});
+    if(!managementCurrent(session,id)){await response.body?.cancel();return;}
+    const blob=await response.blob();if(!managementCurrent(session,id))return;
+    if(configUrl)URL.revokeObjectURL(configUrl);configUrl=URL.createObjectURL(blob);
+    $('config-download').href=configUrl;rotationRevision=revision;rotationExpiry=Date.now()+600000;
     $('rotation-commands').textContent='cd /srv/docker/docker-dashboard-collector\ninstall -m 0600 ~/Downloads/collector.json ./collector.json\nsudo docker compose up -d --force-recreate collector';
     $('rotation-result').hidden=false;updateEnrollment();$('config-download').focus();
-  }catch(error){showError('management-message',error);}finally{$('rotate-token').disabled=false;}
+  }catch(error){if(managementCurrent(session,id))showError('management-message',error);}finally{if(managementCurrent(session,id))$('rotate-token').disabled=false;}
 };
 const context = document.modelContext;
 if (context?.registerTool) {

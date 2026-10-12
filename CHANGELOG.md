@@ -3,6 +3,25 @@
 Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 
+## [0.7.1] - 2026-10-12
+
+### Changed
+
+- Compact host navigation on phones and tablets, with All hosts in the same scrolling selector.
+- Quieter dashboard tabs, clearer attention rows, and fewer repeated service labels in the container table.
+- Host-specific, numbered terminal instructions and clearer progress during collector enrollment.
+- Refreshed README screenshots using fictional data.
+
+### Fixed
+
+- Stale or unavailable reports freeze container uptime at the last report, matching container details.
+- Delayed enrollment, update, and token responses cannot populate a different or reopened host dialog.
+- Collector update confirmation compares report timestamps rather than depending on the browser clock.
+
+### Compatibility
+
+- Existing collectors continue reporting. This interface update does not require a collector reinstall or configuration change.
+
 ## [0.7.0] - 2026-10-12
 
 ### Added

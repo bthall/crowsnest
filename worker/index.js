@@ -7,6 +7,7 @@ const BOARD_JS = '__BOARD_JS__';
 const BOARD_CSS = '__BOARD_CSS__';
 const LOGO = '__LOGO_BASE64__';
 const VERSION = '__APP_VERSION__';
+// __VERSIONS_SOURCE__
 const STATES = new Set(['running','exited','created','restarting','paused','dead','removing','unknown']);
 const HEALTH = new Set(['healthy','unhealthy','starting','none']);
 const headers = {'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'};
@@ -40,7 +41,8 @@ function validatedReport(data) {
     seen.add(c.id); return {id:c.id,name:c.name,image:c.image,state:c.state,health:c.health,restarts:c.restarts,startedAt:c.startedAt,finishedAt:c.finishedAt,...metadata};
   });
   if(!text(data.engineVersion,80)) throw new Error('Invalid version');
-  return {containers,engineVersion:data.engineVersion,receivedAt:new Date().toISOString()};
+  if(data.collectorVersion!==undefined && !validCollectorVersion(data.collectorVersion))throw new Error('Invalid collector version');
+  return {containers,engineVersion:data.engineVersion,...data.collectorVersion!==undefined?{collectorVersion:data.collectorVersion}:{},receivedAt:new Date().toISOString()};
 }
 function installer(config) {
   const blocks=[['compose.yaml',COMPOSE],['collector.py',COLLECTOR],['proxy.cfg',PROXY]];
@@ -90,6 +92,7 @@ async function uniqueName(bucket,name,except) {
   return true;
 }
 function event(kind,text,at=new Date().toISOString()) {return {kind,text,at};}
+function containerEvent(kind,text,c,at) {return {...event(kind,text,at),containerId:c.id,containerName:c.name};}
 async function recordHistory(bucket,id,events) {
   if(!events.length)return;
   const object=await bucket.get('history/'+id+'.json');
@@ -105,15 +108,17 @@ function reportEvents(previous,report) {
   const before=new Map(previous.containers.map(c=>[c.id,c]));
   for(const c of report.containers) {
     const old=before.get(c.id);before.delete(c.id);
-    if(!old)events.push(event('container',c.name+' appeared',at));
+    if(!old)events.push(containerEvent('container',c.name+' appeared',c,at));
     else {
-      if(old.state!==c.state || old.health!==c.health)events.push(event('status',c.name+': '+old.state+'/'+old.health+' → '+c.state+'/'+c.health,at));
-      if(c.restarts>old.restarts)events.push(event('restart',c.name+': '+(c.restarts-old.restarts)+' additional restart(s)',at));
-      if(old.image!==c.image)events.push(event('container',c.name+': image changed to '+c.image,at));
+      if(old.state!==c.state || old.health!==c.health)events.push(containerEvent('status',c.name+': '+old.state+'/'+old.health+' → '+c.state+'/'+c.health,c,at));
+      if(c.restarts>old.restarts)events.push(containerEvent('restart',c.name+': '+(c.restarts-old.restarts)+' additional restart(s)',c,at));
+      if(old.image!==c.image)events.push(containerEvent('container',c.name+': image changed to '+c.image,c,at));
+      if(old.name!==c.name)events.push(containerEvent('container','Renamed from '+old.name+' to '+c.name,c,at));
     }
   }
-  for(const c of before.values())events.push(event('container',c.name+' disappeared',at));
+  for(const c of before.values())events.push(containerEvent('container',c.name+' disappeared',c,at));
   if(previous.engineVersion!==report.engineVersion)events.push(event('host','Docker Engine changed to '+report.engineVersion,at));
+  if(previous.collectorVersion!==report.collectorVersion && report.collectorVersion)events.push(event('collector','Collector now reports v'+report.collectorVersion,at));
   return events;
 }
 // __NOTIFICATIONS_SOURCE__
@@ -196,7 +201,7 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
           hosts.push({id:h.id,name:h.name,createdAt:h.createdAt,credentialRevision:h.tokenRevision||0,maintenanceUntil:maintenance.until||null,snapshot:snapshot?await snapshot.json():null});
         } cursor=list.truncated?list.cursor:undefined;
       }while(cursor);
-      return json({hosts});
+      return json({hosts,availableCollectorVersion:VERSION});
     }
     if(path==='/api/hosts' && request.method==='POST') {
       if(!sameOrigin(request))return json({error:'Invalid origin'},403);
@@ -245,7 +250,7 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
         return json({ok:true});
       }
       if(hostRoute[2]==='collector' && request.method==='POST') {
-        if(data.format==='update')return json({updateCommand:collectorUpdate()});
+        if(data.format==='update')return json({updateCommand:collectorUpdate(),collectorVersion:VERSION});
         if(!env.COLLECTOR_SERVICE_TOKEN)return json({error:'Collector setup unavailable'},503);
         if(!['compose','config','setup'].includes(data.format))return json({error:'Choose a collector package or configuration'},400);
         const token=crypto.randomUUID()+crypto.randomUUID();
@@ -259,6 +264,24 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
       if(!env.BUCKET)return json({error:'Storage unavailable'},503);
       const id=url.searchParams.get('host');
       if(id && !/^[a-f0-9-]{36}$/.test(id))return json({error:'Invalid host'},400);
+      const containerId=url.searchParams.get('container');
+      if(containerId) {
+        if(!id || !/^[a-f0-9]{64}$/.test(containerId))return json({error:'Choose a host and a valid container'},400);
+        const object=await env.BUCKET.get('hosts/'+id+'.json');if(!object)return json({error:'Unknown host'},404);
+        const host=await object.json(), snapshot=await env.BUCKET.get('snapshots/'+id+'.json'), history=await env.BUCKET.get('history/'+id+'.json');
+        const entries=history?await history.json():[];
+        const current=snapshot?(await snapshot.json()).containers.find(c=>c.id===containerId):null;
+        const name=current?.name || entries.find(e=>e.containerId===containerId)?.containerName;
+        const events=[];
+        for(const e of entries) {
+          if(Date.parse(e.at)<=Date.now()-30*86400000)continue;
+          const byId=e.containerId===containerId;
+          const byName=!e.containerId && name && ['container','status','restart'].includes(e.kind) && (e.text.startsWith(name+': ') || e.text===name+' appeared' || e.text===name+' disappeared');
+          if(byId || byName)events.push({...e,hostId:host.id,hostName:host.name,matchedBy:byId?'id':'name'});
+        }
+        events.sort((a,b)=>Date.parse(b.at)-Date.parse(a.at));
+        return json({events:events.slice(0,100),legacyMatches:events.some(e=>e.matchedBy==='name')});
+      }
       const events=[];let cursor;
       do {
         const list=await env.BUCKET.list({prefix:'hosts/',cursor});

@@ -4,6 +4,8 @@ let helpInitialized = false, groupByProject = false;
 let view = 'containers', historyEvents = [], historyError = '', historyLoading = false, historySequence = 0;
 let enrollmentId = null, packageUrl = null, configUrl = null, managedId = null, rotationRevision = null, rotationExpiry = 0;
 let setupCommand = '';
+let availableCollectorVersion = null, collectorUpdateTarget = null, collectorUpdateRequestedAt = 0, collectorUpdatePreviousVersion = null, collectorUpdateBusy = false;
+let detailSelection = null, detailEvents = [], detailHistoryError = '', detailHistoryLoading = false, detailHistorySequence = 0, detailHistoryController = null, detailLegacyMatches = false;
 const $ = id => document.getElementById(id);
 const age = iso => Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 1000));
 const needsAttention = c => c.health === 'unhealthy' || ['restarting', 'dead'].includes(c.state);
@@ -25,6 +27,15 @@ function node(tag, className = '', text) {
 function hostState(host) {
   return !host.snapshot ? 'Awaiting report' : age(host.snapshot.receivedAt) > 120 ? 'Stale' : 'Reporting';
 }
+function collectorInfo(host) {
+  const version=host?.snapshot?.collectorVersion;
+  const comparison=compareCollectorVersions(version,availableCollectorVersion);
+  if(!host?.snapshot)return {text:'Collector awaiting first report',short:'',comparison};
+  if(!validCollectorVersion(version))return {text:'Collector version unknown — update for version reporting',short:'Collector version unknown',comparison};
+  const fresh=hostState(host)==='Reporting' && !lastError;
+  const status=comparison===0?'current':comparison===-1?'update available to v'+availableCollectorVersion:comparison===1?'newer than this dashboard':'available version unknown';
+  return {text:'Collector v'+version+' · '+status+(fresh?'':' (last reported)'),short:'Collector v'+version+(comparison===-1?' · update available':''),comparison};
+}
 function syncHosts() {
   if (!hosts.length) {
     $('hosts').replaceChildren(node('p', '', loaded ? 'No hosts connected.' : 'Loading hosts…'));
@@ -40,7 +51,7 @@ function syncHosts() {
       button.dataset.host = host.id;
       const name = node('span', 'host-name');
       name.append(node('strong'), node('span', 'host-issues'));
-      button.append(name, node('span', 'host-state'));
+      button.append(name, node('span', 'host-state'),node('span','host-collector'));
       button.onclick = () => {
         selectHost(host.id);
       };
@@ -56,9 +67,12 @@ function syncHosts() {
     stateEl.className = 'host-state' + (state === 'Reporting' ? ' good' : state === 'Stale' ? ' warn' : '');
     const count = host.snapshot?.containers.length;
     stateEl.textContent = inMaintenance(host) ? 'Maintenance · '+state : state + (host.snapshot ? ' · ' + count + (count === 1 ? ' container' : ' containers') : '');
+    const collector=collectorInfo(host), collectorEl=button.querySelector('.host-collector');
+    collectorEl.textContent=collector.short;collectorEl.className='host-collector'+(collector.comparison===-1?' warn':'');
   }
 }
 function renderRows(containers) {
+  const focused=document.activeElement?.classList.contains('container-link')?document.activeElement.dataset.containerKey:null;
   const rows = [];
   const groups = new Map();
   for(const c of containers) {
@@ -79,7 +93,9 @@ function renderRows(containers) {
     for(const c of group) {
     const row = node('tr'), name = node('td');
     const uptime = c.state === 'running' && Date.parse(c.startedAt) > 0 ? duration(age(c.startedAt)) : '—';
-    name.append(node('strong', 'container-name', c.name), node('span', 'image', c.image));
+    const link=node('button','container-link',c.name);
+    link.dataset.containerKey=c.hostId+':'+c.id;link.setAttribute('aria-label','View '+c.name+' on '+c.hostName);link.onclick=()=>openContainerDetails(c.hostId,c.id);
+    name.append(link, node('span', 'image', c.image));
     if(selected===null) name.append(node('span','row-host',c.hostName+(c.stale?' · last known status':'')));
     if(c.composeService)name.append(node('span','image','Service: '+c.composeService));
     name.append(node('span', 'mobile-details', 'Uptime ' + uptime + ' · ' + c.restarts + ' restarts'));
@@ -92,6 +108,7 @@ function renderRows(containers) {
     }
   }
   $('rows').replaceChildren(...rows);
+  if(focused)[...$('rows').querySelectorAll('.container-link')].find(el=>el.dataset.containerKey===focused)?.focus({preventScroll:true});
 }
 function render() {
   syncHosts();
@@ -103,6 +120,10 @@ function render() {
   $('fleet-summary').textContent = !loaded ? 'Loading your fleet…' : !hosts.length ? 'Connect a host to start watching your containers.' :
     hosts.length + (hosts.length === 1 ? ' host' : ' hosts') + ' · ' + reporting + ' reporting' + (staleHosts ? ' · ' + staleHosts + ' stale' : '');
   const host = hosts.find(h => h.id === selected), snapshot = host?.snapshot, fleet = selected === null;
+  if(detailSelection && !hosts.some(h=>h.id===detailSelection.hostId))closeContainerDetails(false);
+  const inspecting=!!detailSelection && view==='containers';
+  $('container-details').hidden=!inspecting;
+  $('collector-summary').hidden=!host;$('collector-summary').textContent=host?collectorInfo(host).text:'';
   const paused=hosts.filter(h=>(fleet || h.id===selected) && inMaintenance(h));
   $('maintenance-banner').hidden=!paused.length;
   $('maintenance-banner').textContent=host && paused.length?host.name+': '+maintenanceText(host)+'. Health and activity stay visible.':paused.length+' host'+(paused.length===1?' is':'s are')+' in maintenance. Automatic notifications are paused for those hosts; health and activity stay visible.';
@@ -119,7 +140,7 @@ function render() {
   $('resume-setup').hidden = !host || !!snapshot;
   const containers = hosts.filter(h=>fleet || h.id===selected).flatMap(h=>(h.snapshot?.containers||[]).map(c=>({...c,hostId:h.id,hostName:h.name,stale:hostState(h)==='Stale'})));
   const issues = containers.filter(needsAttention).length;
-  $('summary').hidden = view !== 'containers' || (!snapshot && !fleet) || !hosts.length;
+  $('summary').hidden = inspecting || view !== 'containers' || (!snapshot && !fleet) || !hosts.length;
   $('total').textContent = containers.length;
   $('running').textContent = containers.filter(c => c.state === 'running').length;
   $('attention').textContent = issues;
@@ -134,14 +155,14 @@ function render() {
   const query = $('search').value.trim().toLowerCase();
   const visible = containers.filter(c => (!attentionOnly || needsAttention(c)) && (!query || [c.name,c.image,c.hostName,c.composeProject,c.composeService].join(' ').toLowerCase().includes(query)))
     .sort((a, b) => Number(needsAttention(b)) - Number(needsAttention(a)) || a.name.localeCompare(b.name));
-  $('table-tools').hidden = view !== 'containers' || !containers.length;
+  $('table-tools').hidden = inspecting || view !== 'containers' || !containers.length;
   $('attention-filter').setAttribute('aria-pressed', String(attentionOnly));
   $('compose-group').setAttribute('aria-pressed',String(groupByProject));
   $('filter-count').textContent = issues;
-  $('table-wrap').hidden = view !== 'containers' || !visible.length;
-  $('table-footer').hidden = view !== 'containers' || !containers.length;
+  $('table-wrap').hidden = inspecting || view !== 'containers' || !visible.length;
+  $('table-footer').hidden = inspecting || view !== 'containers' || !containers.length;
   $('row-count').textContent = visible.length + ' of ' + containers.length + ' containers';
-  $('empty').hidden = view !== 'containers' || !!visible.length;
+  $('empty').hidden = inspecting || view !== 'containers' || !!visible.length;
   $('empty-add').hidden = !loaded || !!host || !!lastError || !!hosts.length;
   $('clear-filters').hidden = !containers.length || !!visible.length;
   $('empty-logo').hidden = !!hosts.length || !loaded || !!lastError;
@@ -172,6 +193,8 @@ function render() {
   renderPanels();
   updateEnrollment();
   updateMaintenance();
+  renderContainerDetails();
+  updateCollectorVersion();
 }
 async function refresh(selectName) {
   if (loading) return;
@@ -182,7 +205,7 @@ async function refresh(selectName) {
     if (!response.ok) throw new Error('Unable to load current status. Last loaded data may be out of date. Try Refresh.');
     const data = await response.json();
     if (!Array.isArray(data.hosts)) throw new Error('Unexpected status response. Try Refresh.');
-    hosts = data.hosts;
+    hosts = data.hosts;availableCollectorVersion=validCollectorVersion(data.availableCollectorVersion)?data.availableCollectorVersion:null;
     if (typeof selectName === 'string') selected = hosts.find(h => h.name === selectName)?.id || selected;
     if (selected !== null && !hosts.some(h => h.id === selected)) selected = null;
     loaded = true; lastError = '';
@@ -195,12 +218,85 @@ async function refresh(selectName) {
     loading = false; $('refresh').disabled = false; $('refresh-label').textContent = 'Refresh';
     render();
     if(view==='activity') loadHistory();
+    if(detailSelection && !detailHistoryLoading)loadContainerHistory();
   }
 }
 function selectHost(id) {
+  closeContainerDetails(false);
   selected=id; attentionOnly=false; $('search').value=''; setupSuccess='';
   historyEvents=[]; historyError=''; historySequence++;
   render(); if(view==='activity') loadHistory();
+}
+function closeContainerDetails(restoreFocus=true) {
+  const key=detailSelection?detailSelection.hostId+':'+detailSelection.containerId:null;
+  detailSelection=null;detailHistorySequence++;detailHistoryController?.abort();detailHistoryLoading=false;
+  $('container-details').hidden=true;
+  if(restoreFocus){render();const link=[...$('rows').querySelectorAll('.container-link')].find(el=>el.dataset.containerKey===key);(link||(!$('table-tools').hidden?$('search'):$('containers'))).focus({preventScroll:true});}
+}
+function openContainerDetails(hostId,containerId) {
+  const host=hosts.find(h=>h.id===hostId), container=host?.snapshot?.containers.find(c=>c.id===containerId);if(!container)return;
+  detailHistoryController?.abort();detailHistorySequence++;
+  detailSelection={hostId,containerId,lastKnown:container,lastSeenAt:host.snapshot.receivedAt};detailEvents=[];detailHistoryError='';detailLegacyMatches=false;detailHistoryLoading=false;
+  $('detail-copy-status').textContent='';$('container-details').querySelector('details').open=false;
+  render();$('detail-title').focus({preventScroll:true});$('container-details').scrollIntoView({block:'start'});loadContainerHistory();
+}
+function reportDate(value,fallback='Not recorded') {
+  return Date.parse(value)>0?new Date(value).toLocaleString():fallback;
+}
+function renderContainerDetails() {
+  if(!detailSelection)return;
+  const host=hosts.find(h=>h.id===detailSelection.hostId);if(!host)return;
+  const current=host.snapshot?.containers.find(c=>c.id===detailSelection.containerId);
+  if(current){detailSelection.lastKnown=current;detailSelection.lastSeenAt=host.snapshot.receivedAt;}
+  const c=current||detailSelection.lastKnown, stale=hostState(host)==='Stale';
+  $('detail-title').textContent=c.name;$('detail-host').textContent=host.name+' · Docker Engine '+(host.snapshot?.engineVersion||'unknown');
+  $('detail-status').textContent=!current?'No longer reported':stale?'Last known status':needsAttention(c)?'Needs attention':'Reported';
+  $('detail-status').className='pill '+(!current||stale?'warn':needsAttention(c)?'bad':'');
+  const warning=lastError || (!current?'This container is missing from the latest report. The information below is its last reported state. It may have been removed or replaced.':stale?'The host has not reported for '+duration(age(host.snapshot.receivedAt))+'. These are last known values.':'');
+  $('detail-warning').hidden=!warning;$('detail-warning').textContent=warning;
+  $('detail-image').textContent=c.image;$('detail-state').textContent=c.state;
+  $('detail-health').textContent=c.health==='none'?'No Docker health check':c.health;
+  $('detail-restarts').textContent=c.restarts;$('detail-started').textContent=reportDate(c.startedAt,'Not started');$('detail-finished').textContent=reportDate(c.finishedAt,'No finish recorded');
+  const live=!!current && !stale && !lastError;
+  $('detail-uptime').textContent=c.state==='running' && Date.parse(c.startedAt)>0?duration(Math.max(0,Math.floor(((live?Date.now():Date.parse(detailSelection.lastSeenAt))-Date.parse(c.startedAt))/1000)))+(live?'':' (at last report)'):'Not running';
+  $('detail-project').textContent=c.composeProject===undefined?'Not reported by this collector':c.composeProject||'Standalone container';
+  $('detail-service').textContent=c.composeService===undefined?'Not reported by this collector':c.composeService||'None';
+  $('detail-report').textContent=reportDate(detailSelection.lastSeenAt)+' · '+duration(age(detailSelection.lastSeenAt))+' ago';$('detail-id').textContent=c.id;
+  $('detail-history-status').textContent=detailHistoryError || (detailHistoryLoading?'Loading recent changes…':detailEvents.length?detailEvents.length+' retained change'+(detailEvents.length===1?'':'s')+'.':'No retained changes for this container. New changes appear as reports arrive.');
+  $('detail-history-retry').hidden=!detailHistoryError;$('detail-history-retry').disabled=detailHistoryLoading;
+  $('detail-history-legacy').hidden=!detailLegacyMatches;
+  $('detail-history').replaceChildren(...detailEvents.map(e=>{const li=node('li'),time=node('time','event-time',reportDate(e.at));time.dateTime=e.at;li.append(time,node('p','',e.text));if(e.matchedBy==='name')li.append(node('p','input-help','Earlier event matched by name'));return li;}));
+}
+async function loadContainerHistory() {
+  if(!detailSelection)return;
+  const sequence=++detailHistorySequence,{hostId,containerId}=detailSelection;
+  detailHistoryController?.abort();detailHistoryController=new AbortController();
+  detailHistoryLoading=true;detailHistoryError='';renderContainerDetails();
+  try {
+    const response=await fetch('/api/history?host='+encodeURIComponent(hostId)+'&container='+encodeURIComponent(containerId),{cache:'no-store',signal:AbortSignal.any([detailHistoryController.signal,AbortSignal.timeout(10000)])});
+    if(!response.ok)throw new Error('Unable to refresh activity. Previously loaded events may be out of date. Choose Retry activity.');
+    const data=await response.json();if(!Array.isArray(data.events))throw new Error('Unexpected activity response. Choose Retry activity.');
+    if(sequence===detailHistorySequence){detailEvents=data.events;detailLegacyMatches=!!data.legacyMatches;}
+  }catch(error){if(sequence===detailHistorySequence && error.name!=='AbortError')detailHistoryError=error.name==='TimeoutError'?'Activity request timed out. Choose Retry activity.':error.message;}
+  finally{if(sequence===detailHistorySequence){detailHistoryLoading=false;renderContainerDetails();}}
+}
+$('close-details').onclick=()=>closeContainerDetails();$('detail-history-retry').onclick=loadContainerHistory;
+$('container-details').addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();closeContainerDetails();}});
+$('copy-container-id').onclick=async()=>{
+  try{await navigator.clipboard.writeText($('detail-id').textContent);$('detail-copy-status').textContent='Container ID copied.';}
+  catch{const range=document.createRange();range.selectNodeContents($('detail-id'));const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);$('detail-copy-status').textContent='Clipboard blocked. Copy the selected container ID.';}
+};
+function updateCollectorVersion() {
+  const host=hosts.find(h=>h.id===managedId);if(!host)return;
+  const info=collectorInfo(host);
+  $('managed-collector-version').textContent=info.text;
+  $('managed-collector-freshness').textContent=host.snapshot?'Last report: '+reportDate(host.snapshot.receivedAt)+'. Available with this dashboard: '+(availableCollectorVersion?'v'+availableCollectorVersion:'unknown')+'.':'The first report will show this collector’s version.';
+  $('prepare-update').disabled=collectorUpdateBusy || info.comparison===1;
+  if(info.comparison===1)$('managed-collector-freshness').textContent+=' This collector is newer; update the dashboard before preparing an older collector.';
+  if(collectorUpdateTarget){
+    const confirmed=host.snapshot?.collectorVersion===collectorUpdateTarget && Date.parse(host.snapshot.receivedAt)>collectorUpdateRequestedAt;
+    $('collector-update-confirmation').textContent=collectorUpdatePreviousVersion===collectorUpdateTarget?'The collector already reports v'+collectorUpdateTarget+'.':confirmed?'Version confirmed: this host reported v'+collectorUpdateTarget+' at '+reportDate(host.snapshot.receivedAt)+'.':'Run the copied command on this host. Waiting for a report with v'+collectorUpdateTarget+'.';
+  }
 }
 function alerts() {
   const result=[];
@@ -320,7 +416,7 @@ $('back-prepare').onclick=()=>{setupStage(1);$('copy-setup').focus();};
 $('wait-report').onclick=()=>{setupStage(3);updateEnrollment();refresh();$('finish-setup').focus();};
 $('back-deploy').onclick=()=>{setupStage(2);$('copy-deploy').focus();};
 $('resume-setup').onclick=resumeSetup;
-for(const key of ['containers','activity','alerts'])$('view-'+key).onclick=()=>{view=key;render();if(key==='activity')loadHistory();if(key==='alerts')loadNotifications();};
+for(const key of ['containers','activity','alerts'])$('view-'+key).onclick=()=>{closeContainerDetails(false);view=key;render();if(key==='activity')loadHistory();if(key==='alerts')loadNotifications();};
 $('attention-filter').onclick=()=>{attentionOnly=!attentionOnly;render();};
 $('compose-group').onclick=()=>{groupByProject=!groupByProject;render();};
 $('clear-filters').onclick=()=>{attentionOnly=false;$('search').value='';render();$('search').focus();};
@@ -338,12 +434,12 @@ $('manage-host').onclick=()=>{
   $('management-title').textContent='Manage '+host.name;$('rename-host').value=host.name;
   $('remove-name').value='';$('remove-host').disabled=true;$('remove-label').textContent='Enter “'+host.name+'” to confirm';
   $('management-message').hidden=true;$('rotation-result').hidden=true;
-  $('collector-update').hidden=true;$('collector-update-command').value='';$('collector-update-status').textContent='';updateMaintenance();
+  $('collector-update').hidden=true;$('collector-update-command').value='';$('collector-update-status').textContent='';$('collector-update-confirmation').textContent='';collectorUpdateTarget=null;updateMaintenance();updateCollectorVersion();
   for(const details of $('management').querySelectorAll('details'))details.open=false;
   $('management').showModal();$('rename-host').focus();
 };
 $('close-management').onclick=()=>$('management').close();
-$('management').addEventListener('close',()=>{if(configUrl){URL.revokeObjectURL(configUrl);configUrl=null;}$('config-download').removeAttribute('href');$('collector-update-command').value='';rotationRevision=null;});
+$('management').addEventListener('close',()=>{if(configUrl){URL.revokeObjectURL(configUrl);configUrl=null;}$('config-download').removeAttribute('href');$('collector-update-command').value='';collectorUpdateTarget=null;rotationRevision=null;});
 function updateMaintenance() {
   const host=hosts.find(h=>h.id===managedId);if(!host)return;
   const active=inMaintenance(host);
@@ -359,9 +455,9 @@ async function setMaintenance(minutes) {
 $('maintenance-save').onclick=()=>setMaintenance(Number($('maintenance-duration').value));
 $('maintenance-end').onclick=()=>setMaintenance(0);
 $('prepare-update').onclick=async()=>{
-  $('prepare-update').disabled=true;$('management-message').hidden=true;
-  try{const data=await (await mutate('/api/hosts/'+managedId+'/collector','POST',{format:'update'})).json();if(typeof data.updateCommand!=='string')throw new Error('Incomplete update response. Try again.');$('collector-update-command').value=data.updateCommand;$('collector-update').hidden=false;$('copy-update').focus();}
-  catch(error){showError('management-message',error);}finally{$('prepare-update').disabled=false;}
+  const id=managedId;collectorUpdateBusy=true;$('prepare-update').disabled=true;$('management-message').hidden=true;
+  try{const data=await (await mutate('/api/hosts/'+id+'/collector','POST',{format:'update'})).json();if(!$('management').open || managedId!==id)return;if(typeof data.updateCommand!=='string' || !validCollectorVersion(data.collectorVersion))throw new Error('Incomplete update response. Try again.');collectorUpdateTarget=data.collectorVersion;collectorUpdateRequestedAt=Date.now();collectorUpdatePreviousVersion=hosts.find(h=>h.id===id)?.snapshot?.collectorVersion;$('collector-update-command').value=data.updateCommand;$('collector-update').hidden=false;updateCollectorVersion();$('copy-update').focus();}
+  catch(error){if($('management').open && managedId===id)showError('management-message',error);}finally{collectorUpdateBusy=false;updateCollectorVersion();}
 };
 $('copy-update').onclick=async()=>{
   try{await navigator.clipboard.writeText($('collector-update-command').value);$('collector-update-status').textContent='Copied. Paste and run on the host as the installation owner.';}

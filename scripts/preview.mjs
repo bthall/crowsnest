@@ -2,10 +2,13 @@
 import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
+import {createHash} from 'node:crypto';
 const root = fileURLToPath(new URL('../', import.meta.url));
+const {version}=JSON.parse(await readFile(root+'package.json','utf8'));
+const containerId=name=>createHash('sha256').update(name).digest('hex');
 const ago = seconds => new Date(Date.now() - seconds * 1000).toISOString();
 const container = (name, image, state, health, restarts = 0, uptime = 86400) => ({
-  id: name.padEnd(64, '0'), name, image, state, health, restarts,
+  id: containerId(name), name, image, state, health, restarts,
   startedAt: ago(uptime), finishedAt: state === 'exited' ? ago(1800) : '',
 });
 function fixtures() {
@@ -32,6 +35,8 @@ function fixtures() {
     c.composeService=c.composeProject?c.name:'';
   }
   data.hosts[1].maintenanceUntil=new Date(Date.now()+3600000).toISOString();
+  data.availableCollectorVersion=version;
+  data.hosts[0].snapshot.collectorVersion='0.6.0';data.hosts[1].snapshot.collectorVersion=version;
   return data;
 }
 const assets = new Map([
@@ -48,11 +53,15 @@ const server = createServer(async (req, res) => {
   }
   if(url.pathname==='/api/history' && req.method==='GET') {
     const events=[
-      {at:ago(45),kind:'status',text:'immich-server: running/healthy → running/unhealthy',hostId:'demo-lighthouse',hostName:'lighthouse'},
-      {at:ago(150),kind:'restart',text:'redis: 2 additional restart(s)',hostId:'demo-lighthouse',hostName:'lighthouse'},
+      {at:ago(45),kind:'status',text:'immich-server: running/healthy → running/unhealthy',containerId:containerId('immich-server'),hostId:'demo-lighthouse',hostName:'lighthouse'},
+      {at:ago(300),kind:'restart',text:'immich-server: 1 additional restart(s)',containerId:containerId('immich-server'),hostId:'demo-lighthouse',hostName:'lighthouse'},
+      {at:ago(1800),kind:'container',text:'immich-server: image changed to ghcr.io/immich-app/immich-server:v2',containerId:containerId('immich-server'),hostId:'demo-lighthouse',hostName:'lighthouse'},
+      {at:ago(7200),kind:'status',text:'immich-server: running/starting → running/healthy',matchedBy:'name',hostId:'demo-lighthouse',hostName:'lighthouse'},
+      {at:ago(150),kind:'restart',text:'redis: 2 additional restart(s)',containerId:containerId('redis'),hostId:'demo-lighthouse',hostName:'lighthouse'},
       {at:ago(1800),kind:'report',text:'First collector report received',hostId:'demo-rookery',hostName:'rookery'},
     ];
-    res.setHeader('Content-Type','application/json');res.end(JSON.stringify({events:events.filter(e=>!url.searchParams.has('host')||e.hostId===url.searchParams.get('host'))}));return;
+    const selected=events.filter(e=>(!url.searchParams.has('host')||e.hostId===url.searchParams.get('host'))&&(!url.searchParams.has('container')||e.containerId===url.searchParams.get('container')||e.matchedBy==='name'&&url.searchParams.get('container')===containerId('immich-server'))).map(e=>({...e,matchedBy:e.matchedBy||'id'}));
+    res.setHeader('Content-Type','application/json');res.end(JSON.stringify({events:selected,legacyMatches:selected.some(e=>e.matchedBy==='name')}));return;
   }
   if (url.pathname === '/api/hosts') {
     res.setHeader('Content-Type', 'application/json');
@@ -69,6 +78,7 @@ const server = createServer(async (req, res) => {
       const {version} = JSON.parse(await readFile(root + 'package.json', 'utf8'));
       body = body.toString('utf8').replaceAll('__APP_VERSION__', version);
     }
+    if(url.pathname==='/assets/board.js')body=(await readFile(root+'worker/versions.js','utf8'))+'\n'+body.toString('utf8');
     res.setHeader('Content-Type', asset[1]); res.end(body);
   }
   catch {res.writeHead(404); res.end();}

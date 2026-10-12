@@ -4,7 +4,7 @@ The dashboard is a dependency-free Cloudflare Worker hosted through ChatGPT Site
 
 Each host runs a Python collector and an HAProxy socket proxy in Docker Compose. The proxy exposes only Docker version, container list, and container inspection reads over an internal Docker network. It denies other endpoints and methods. The collector has outbound HTTPS access and sends a report every 30 seconds. Neither service publishes ports.
 
-Reports include container name, image, state, health, restart count, timestamps, Docker Engine version, and optional Compose project/service names. Only `com.docker.compose.project` and `com.docker.compose.service` are read from labels; arbitrary labels, environment variables, logs, mounts, and network addresses are not sent. Cloudflare R2 holds registrations, latest reports, bounded activity, maintenance timers, and notification state. The dashboard does not control application containers.
+Reports include container name, image, state, health, restart count, timestamps, Docker Engine version, optional collector version, and optional Compose project/service names. Only `com.docker.compose.project` and `com.docker.compose.service` are read from labels; arbitrary labels, environment variables, logs, mounts, and network addresses are not sent. Cloudflare R2 holds registrations, latest reports, bounded activity, maintenance timers, and notification state. The dashboard does not control application containers.
 
 ## Authentication
 
@@ -20,7 +20,7 @@ Replacement tokens are staged as hashes with ten-minute activation deadlines. Th
 
 ## Activity and alerts
 
-Reporting compares each snapshot with the previous one to record container appearance/removal, state and health changes, restart increases, image changes, engine changes, and reporting recovery. First reports, renames, and activated replacements are also recorded. Each host retains at most 100 events; events older than 30 days are hidden and pruned on the next history write. The history API returns at most 100 events for the selected host or fleet. Concurrent reporting can coalesce events because R2 history writes are not transactional; this is an operational activity feed, not an audit log.
+Reporting compares each snapshot with the previous one to record container appearance/removal, state and health changes, restart increases, image changes, engine/collector version changes, container renames, and reporting recovery. First reports, renames, and activated replacements are also recorded. Each host retains at most 100 events; events older than 30 days are hidden and pruned on the next history write. The history API returns at most 100 events for the selected host or fleet. New container events carry the container ID. Container details filter the same retained history by host and ID; legacy events matched by name are labeled as potentially belonging to a previous instance. Concurrent reporting can coalesce events because R2 history writes are not transactional; this is an operational activity feed, not an audit log.
 
 In-app alerts derive from the latest reports: stale hosts, enrollment awaiting a report for more than ten minutes, and unhealthy/restarting/dead containers. Stale container states are explicitly last known. Optional ntfy delivery runs on accepted reports, with a separately scheduled sweep for stale hosts and retries. The browser controls fleet-wide enablement, recovery messages, and a rate-limited test. See [notifications](notifications.md). History starts with this release and does not reconstruct old snapshots. Optional history-write failures do not reject an otherwise valid report.
 
@@ -32,7 +32,8 @@ Per-host maintenance is stored separately from registration records so timer wri
 - `notifier/`: optional standard-library Python runner and restricted Compose deployment for minute sweeps.
 - `worker/index.js`: routes, registration, report validation, and installer generation.
 - `worker/board.html`, `board.js`, `board.css`: dashboard structure, interactions, and styles.
-- `worker/collector.py`: outbound status collector.
+- `worker/collector.py`: outbound status collector, stamped with the package version during assembly.
+- `worker/versions.js`: shared strict SemVer validation and precedence comparison.
 - `worker/proxy.cfg`: restricted Docker API proxy.
 - `worker/compose.yaml`: collector deployment template.
 - `worker/setup.sh`: installer template.

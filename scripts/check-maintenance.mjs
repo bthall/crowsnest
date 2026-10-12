@@ -57,7 +57,9 @@ try {
   await writeFile(join(dir,'collector.json'),'private fixture',{mode:0o600});await writeFile(join(dir,'compose.yaml'),'existing compose');await writeFile(join(dir,'collector.py'),'old code');await writeFile(join(dir,'.env'),'existing user');
   await writeFile(join(bin,'docker'),'#!/bin/sh\nprintf "%s\\n" "$*" >> "$UPDATE_CALLS"\n',{mode:0o755});
   const calls=join(root,'update-calls'), execute=()=>spawnSync('bash',[],{input:update.updateCommand,env:{...process.env,PATH:bin+':'+process.env.PATH,CROWSNEST_COLLECTOR_DIR:dir,UPDATE_CALLS:calls},encoding:'utf8'});
-  assert.equal(execute().status,0);assert.equal(await readFile(join(dir,'collector.py'),'utf8'),await readFile('worker/collector.py','utf8')+'\n');
+  const version=JSON.parse(await readFile('package.json','utf8')).version;
+  assert.equal(update.collectorVersion,version);
+  assert.equal(execute().status,0);assert.equal(await readFile(join(dir,'collector.py'),'utf8'),(await readFile('worker/collector.py','utf8')).replaceAll('__APP_VERSION__',version)+'\n');
   assert.equal(await readFile(join(dir,'collector.json'),'utf8'),'private fixture');assert.equal((await stat(join(dir,'collector.json'))).mode&0o777,0o600);assert.equal(await readFile(join(dir,'.env'),'utf8'),'existing user');assert.equal(await readFile(join(dir,'compose.yaml'),'utf8'),'existing compose');
   assert.match(await readFile(calls,'utf8'),/compose up -d --force-recreate collector/);
   const {unlink}=await import('node:fs/promises');await unlink(join(dir,'collector.py'));await symlink(join(dir,'collector.json'),join(dir,'collector.py'));assert.notEqual(execute().status,0);assert.equal(await readFile(join(dir,'collector.json'),'utf8'),'private fixture');

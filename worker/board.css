@@ -22,6 +22,26 @@ textarea { width: 100%; background: #0f1821; color: var(--text); padding: 12px; 
 .subscription-steps li { margin: 10px 0; }
 .project-heading th { background: #202c36; color: var(--text); white-space: normal; overflow-wrap: anywhere; padding-block: 12px; }
 .project-summary { display: block; font-weight: 400; font-size: 11px; color: var(--muted); margin-top: 3px; }
+.host-collector { display: block; font-size: 11px; font-weight: 400; color: var(--muted); margin-top: 4px; }
+.host-collector.warn { color: var(--orange); }
+button.container-link { display: block; padding: 0; min-height: 30px; max-width: 100%; text-align: left; border: 0; border-radius: 2px; background: transparent; color: var(--text); font-size: 13px; font-weight: 650; overflow-wrap: anywhere; }
+button.container-link:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 4px; }
+.container-inspection { padding: 20px 24px 28px; }
+.detail-back { font-size: 12px; }
+.detail-heading { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin: 22px 0; }
+.detail-heading h3 { margin: 0; font-size: 21px; overflow-wrap: anywhere; }
+.detail-heading > div { min-width: 0; }
+.inspection-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; }
+.inspection-columns h4 { font-size: 14px; margin: 0 0 14px; }
+.detail-facts { margin: 0; font-size: 13px; }
+.detail-facts > div { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.detail-facts dt { color: var(--muted); }
+.detail-facts dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.code-value { font: 12px/1.6 ui-monospace, monospace; overflow-wrap: anywhere; }
+.container-identity { margin-top: 24px; font-size: 13px; }
+.container-identity summary { padding: 8px 0; cursor: pointer; }
+.container-identity button { font-size: 12px; margin-top: 12px; }
+.detail-activity .event-list { margin-top: 18px; }
 pre { overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: #0f1821; padding: 16px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
 pre code { color: #e5d1af; }
 h3 { margin: 24px 0 8px; font-size: 17px; }
@@ -196,12 +216,16 @@ dialog label { display: block; margin: 24px 0 8px; font-size: 13px; font-weight:
   th, td { padding-left: 12px; padding-right: 12px; }
 }
 @media (max-width: 850px) {
+  .inspection-columns { grid-template-columns: minmax(0, 1fr); gap: 28px; }
   .workspace { grid-template-columns: minmax(0, 1fr); gap: 18px; }
   .host-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
   .host-sidebar { min-width: 0; }
   .sidebar-heading { padding: 0 2px 10px; }
 }
 @media (max-width: 600px) {
+  .container-inspection { padding: 18px 16px 24px; }
+  .detail-facts > div { grid-template-columns: 105px minmax(0, 1fr); }
+  button.container-link { font-size: 12px; }
   .app-header { height: 76px; padding: 0 20px; gap: 12px; }
   .brand { gap: 9px; }
   .brand img { width: 40px; height: 40px; }

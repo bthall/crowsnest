@@ -38,7 +38,8 @@ def fake_urlopen(request, timeout):
     assert request.method == 'POST' and timeout == 20
     return Response()
 
-namespace = {'json': json, 'urllib': __import__('urllib'), 'CONFIG': {
+version = json.loads(pathlib.Path('package.json').read_text())['version']
+namespace = {'json': json, 'urllib': __import__('urllib'), 'COLLECTOR_VERSION': version, 'CONFIG': {
     'url': 'https://board.example.com', 'hostId': 'fixture',
     'hostToken': 'test-host-token', 'serviceToken': 'test-service-token'}}
 exec(compile(functions, 'collector.py', 'exec'), namespace)
@@ -51,6 +52,7 @@ try:
         inspect['Config']['Labels'] = None
         namespace['report']()
     assert captured[0]['containers'][0]['composeProject'] == 'media'
+    assert captured[0]['collectorVersion'] == version
     assert captured[0]['containers'][0]['composeService'] == 'web'
     assert 'must-not-collect' not in json.dumps(captured)
     assert captured[1]['containers'][0]['composeProject'] == ''

@@ -67,7 +67,7 @@ This flow rotates the per-host reporting token. The platform service credential 
 
 Select the host, then **Manage host → Update collector → Prepare update command**. Copy the command into Bash on that host as the user who owns its installation. It atomically replaces only `collector.py`, validates the existing Compose configuration, and recreates the collector service. It does not replace `collector.json`, rotate tokens, change `.env`, or overwrite `compose.yaml`. Docker uses sudo if the user cannot access the daemon directly.
 
-For a different path, run `export CROWSNEST_COLLECTOR_DIR='/srv/docker/your-directory'` before the copied block. Missing configuration or a symlink in place of `collector.py` stops the update. Watch for `Status delivered` in collector logs and refresh the dashboard. Existing collectors remain compatible, but Compose grouping requires the updated collector; missing metadata is labeled explicitly in the table.
+For a different path, run `export CROWSNEST_COLLECTOR_DIR='/srv/docker/your-directory'` before the copied block. Missing configuration or a symlink in place of `collector.py` stops the update. Manage host shows the reported collector version, report time, and the version bundled with the dashboard. After running the command, watch for `Status delivered` in collector logs; the UI confirms the target version only when a fresh report arrives. Existing collectors remain compatible; older collectors show **version unknown** until updated. The bundled update is disabled when a host reports a newer version, to avoid an unintended downgrade. Compose grouping requires the updated collector; missing metadata is labeled explicitly in the table.
 
 ## Pause notifications during maintenance
 

@@ -22,6 +22,11 @@ Crowsnest is a private dashboard for Docker host and container status. A small o
 <p><img src="docs/screenshots/enrollment-desktop.png" alt="Crowsnest host setup with copyable preparation and separate Compose start commands" width="680"></p>
 </details>
 
+<details>
+<summary>Container details in 0.7.0</summary>
+<p><img src="docs/screenshots/container-details-desktop.png" alt="Crowsnest container details with state, health, Compose metadata, timestamps, and recent changes" width="960"></p>
+</details>
+
 ## Features
 
 - Multiple Docker hosts in one private dashboard.
@@ -38,6 +43,8 @@ Crowsnest is a private dashboard for Docker host and container status. A small o
 - Optional authenticated ntfy notifications, phone subscription help, recovery messages, and retry backoff.
 - Timed per-host maintenance pauses with automatic notification resumption.
 - Copyable collector updates that preserve reporting credentials and user permissions.
+- Per-host collector versions, update guidance, and confirmation from a fresh report.
+- Container details with image, state, health, timestamps, restart count, Compose metadata, copyable ID, and recent changes.
 
 Crowsnest displays the latest status and records recent changes. It does not control containers or retain historical metrics. Activity retains up to 100 events per host from the last 30 days; optional ntfy delivery works while the dashboard is closed. See [notification setup](docs/notifications.md) for authentication and unattended stale-host checks.
 
@@ -67,7 +74,7 @@ Omit sudo if your account already has Docker access. Successful reporting logs `
 
 Copied setup and the Compose package contain reporting credentials. Keep the clipboard, any terminal history containing the setup, and `collector.json` private. Do not commit generated installation files. A host left awaiting its first report has a **Continue setup** action.
 
-See the [installation guide](docs/deployment.md) for custom paths and maintenance.
+See the [installation guide](docs/deployment.md) for custom paths, collector updates, and maintenance. Choose a container name to open [container details](docs/container-details.md).
 
 ## Architecture
 
@@ -107,9 +114,10 @@ See [development and validation](docs/development.md) for build output, test cov
 | Guide | Contents |
 | --- | --- |
 | [ntfy notifications](docs/notifications.md) | Private topics, delivery, and background checks |
-| [Collector installation](docs/deployment.md) | New hosts, custom paths, and maintenance |
+| [Collector installation](docs/deployment.md) | New hosts, custom paths, updates, and maintenance |
+| [Container details](docs/container-details.md) | Container facts, recent changes, freshness, and collector versions |
 | [ChatGPT Sites setup](docs/chatgpt-sites.md) | Separate private deployments and distribution readiness |
-| [Roadmap](docs/roadmap.md) | Resource usage and collector version reporting candidates |
+| [Roadmap](docs/roadmap.md) | Resource usage candidates |
 | [Versioning](docs/versioning.md) | Compatibility, changelog, and release procedure |
 | [Configuration](docs/configuration.md) | Runtime bindings, collector configuration, paths, and limits |
 | [Architecture](docs/architecture.md) | Data flow, access control, and hosting |
@@ -126,7 +134,7 @@ The product name is Crowsnest. Existing collector filenames, the `docker-dashboa
 
 This version supports one collector installation per Docker daemon and up to 100 registered hosts. A host report supports up to 250 containers and 128 KiB. Rootless Docker requires manual socket-path and user-mapping adjustments. Host management replaces reporting credentials; changing the platform service credential still requires updating every collector.
 
-The current product version is **0.6.0**. See the [changelog](CHANGELOG.md) and [versioning policy](docs/versioning.md).
+The current product version is **0.7.0**. See the [changelog](CHANGELOG.md) and [versioning policy](docs/versioning.md).
 
 GitHub stores source and runs checks. Pushing to this repository does not publish the dashboard; deployment remains managed through ChatGPT Sites.
 

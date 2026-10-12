@@ -3,6 +3,23 @@
 Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 
+## [0.7.0] - 2026-10-12
+
+### Added
+
+- Collector versions shown separately from Docker Engine versions, with update status against the collector bundled with the deployed dashboard.
+- Version-stamped setup and update commands. Manage host confirms an update only after a fresh report contains the requested version.
+- Container details opened from container names, with image, state, health, restart count, uptime, timestamps, Compose metadata, full ID copying, and recent changes.
+- Container-ID attribution for new activity, including renames, so changes remain associated with an instance when its name changes.
+- Compatibility, SemVer, container-history authorization, replacement/rename, keyboard, and responsive checks; a new README screenshot with fictional data.
+
+### Compatibility and limits
+
+- Existing collectors remain accepted. Collectors without a reported version show **unknown** until updated; Docker Engine versions are never treated as collector versions.
+- Older activity can be matched by name and is labeled as potentially belonging to a previous container with that name. History shares the host's existing 100-event, 30-day retention limit.
+- Stale and missing containers show last reported values. No extra Docker API endpoints, arbitrary labels, environment variables, logs, mounts, or network addresses are collected.
+- Collector versions newer than the dashboard are identified explicitly; the UI disables its update command to avoid an unintended downgrade.
+
 ## [0.6.0] - 2026-10-12
 
 ### Added

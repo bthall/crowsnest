@@ -1,6 +1,7 @@
 import json, os, time, urllib.request, urllib.error, datetime
 
 DOCKER = 'http://socket-proxy:2375'
+COLLECTOR_VERSION = '__APP_VERSION__'
 with open('/run/config/collector.json') as f:
     CONFIG = json.load(f)
 
@@ -30,7 +31,7 @@ def report():
             'composeProject': labels.get('com.docker.compose.project', ''),
             'composeService': labels.get('com.docker.compose.service', '')
         })
-    body = json.dumps({'containers': result, 'engineVersion': version.get('Version', 'unknown')}).encode()
+    body = json.dumps({'containers': result, 'engineVersion': version.get('Version', 'unknown'), 'collectorVersion': COLLECTOR_VERSION}).encode()
     req = urllib.request.Request(CONFIG['url'] + '/api/ingest/' + CONFIG['hostId'], data=body, headers={
         'Content-Type': 'application/json',
         'OAI-Sites-Authorization': 'Bearer ' + CONFIG['serviceToken'],

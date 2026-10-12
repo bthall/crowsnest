@@ -3,6 +3,18 @@
 Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 
+## [0.5.0] - 2026-10-12
+
+### Added
+
+- Copyable host setup that prepares private, user-owned Compose files directly in a Bash terminal, without transferring a package.
+- Explicit review and start commands, a manual-copy fallback when clipboard access is blocked, and an optional package download.
+- Enrollment checks for matching copied/downloaded credentials, private access, staged replacement, file permissions, overwrite protection, and preparation without container startup.
+
+### Compatibility
+
+- Existing collectors, installation paths, and Compose/script API formats remain supported. No collector update is required.
+
 ## [0.4.2] - 2026-10-10
 
 ### Fixed
@@ -98,3 +110,5 @@ Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 [0.4.1]: https://github.com/bthall/crowsnest/compare/21e6fdf74ee24853b5116a63fad97714c587f6fa...main
 
 [0.4.2]: https://github.com/bthall/crowsnest/compare/6b3897592520d5ae8fb8f021eab24d88a4398b70...main
+
+[0.5.0]: https://github.com/bthall/crowsnest/compare/3f09bea74a1cfefd45ce66a832080fa37637c377...main

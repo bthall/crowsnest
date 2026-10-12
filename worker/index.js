@@ -69,6 +69,7 @@ function collectorDownload(config,format='compose') {
   if(format==='config')return new Response(JSON.stringify(config,null,2)+'\n',{headers:{...downloadHeaders,'Content-Type':'application/json','Content-Disposition':'attachment; filename="collector.json"'}});
   const readme='Crowsnest collector '+VERSION+'\n\nReview compose.yaml, collector.py and proxy.cfg before starting.\ncollector.json contains private reporting credentials; never commit it.\nThe collector reads container status through a restricted socket proxy.\nThe proxy runs as container root with all capabilities dropped.\nNo ports are published. No logs or environment variables are reported.\n\nFollow the dashboard deployment steps to create a private directory,\nextract with tar --keep-old-files, write the current user UID/GID to .env,\nand run docker compose up -d. Do not overwrite an existing installation.\nFull guide: https://github.com/bthall/crowsnest/blob/main/docs/deployment.md\n';
   const bytes=tar([['compose.yaml',COMPOSE,0o644],['collector.py',COLLECTOR,0o644],['proxy.cfg',PROXY,0o644],['collector.json',JSON.stringify(config,null,2)+'\n',0o600],['README.txt',readme,0o644]]);
+  if(format==='setup')return json({hostId:config.hostId,packageBase64:btoa(Array.from(bytes,c=>String.fromCharCode(c)).join('')),setupCommand:"bash <<'CROWSNEST_SETUP'\nexport CROWSNEST_PREPARE_ONLY=1\n"+installer(config)+'\nCROWSNEST_SETUP\n'});
   return new Response(bytes,{headers:{...downloadHeaders,'Content-Type':'application/x-tar','Content-Disposition':'attachment; filename="crowsnest-collector.tar"'}});
 }
 const validName=name=>typeof name==='string' && /^[a-zA-Z0-9][a-zA-Z0-9 ._-]{0,63}$/.test(name);
@@ -194,13 +195,13 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
       if(!env.BUCKET || !env.COLLECTOR_SERVICE_TOKEN)return json({error:'Collector setup unavailable'},503);
       let data; try{data=await readJson(request,2048);}catch{return json({error:'Invalid host name'},400);}
       if(!validName(data.name))return json({error:'Use a host name up to 64 characters'},400);
-      if(data.format!==undefined && !['compose','script'].includes(data.format))return json({error:'Unknown collector format'},400);
+      if(data.format!==undefined && !['compose','script','setup'].includes(data.format))return json({error:'Unknown collector format'},400);
       const list=await env.BUCKET.list({prefix:'hosts/',limit:101});
       if(list.truncated || list.objects.length>=100)return json({error:'Host limit reached'},409);
       for(const item of list.objects){const h=await (await env.BUCKET.get(item.key)).json();if(h.name.toLowerCase()===data.name.toLowerCase())return json({error:'That host already exists. Use a unique name.'},409);}
       const id=crypto.randomUUID(), token=crypto.randomUUID()+crypto.randomUUID();
       await env.BUCKET.put('hosts/'+id+'.json',JSON.stringify({id,name:data.name,tokenHash:await hash(token),createdAt:new Date().toISOString()}));
-      if(data.format==='compose')return collectorDownload(collectorConfig(env,id,token));
+      if(['compose','setup'].includes(data.format))return collectorDownload(collectorConfig(env,id,token),data.format);
       return new Response(installer(collectorConfig(env,id,token)),{headers:{...headers,'Content-Type':'application/octet-stream','Content-Disposition':'attachment; filename="docker-watch-setup.sh"'}});
     }
     const hostRoute=path.match(/^\/api\/hosts\/([a-f0-9-]{36})(?:\/(collector))?$/);
@@ -229,7 +230,7 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
       }
       if(hostRoute[2] && request.method==='POST') {
         if(!env.COLLECTOR_SERVICE_TOKEN)return json({error:'Collector setup unavailable'},503);
-        if(!['compose','config'].includes(data.format))return json({error:'Choose a collector package or configuration'},400);
+        if(!['compose','config','setup'].includes(data.format))return json({error:'Choose a collector package or configuration'},400);
         const token=crypto.randomUUID()+crypto.randomUUID();
         host.pendingTokenHash=await hash(token);
         host.pendingTokenExpiresAt=new Date(Date.now()+10*60000).toISOString();

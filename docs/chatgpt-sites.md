@@ -44,7 +44,7 @@ Before calling the setup complete, verify:
 - The access policy permits only the intended owner; anonymous dashboard and asset requests are denied.
 - Registration works on the generated origin and any active custom domain, while cross-origin registration is rejected.
 - Reporting requires both supported private-Site service access and the host's reporting token.
-- The rendered page and JavaScript source contain no service credential. Only explicit private collector downloads carry credentials; host configuration remains private.
+- The ordinary page and static JavaScript source contain no service credential. Explicit private setup responses and collector downloads carry credentials. Manual-copy fallback reveals setup only after a requested copy is blocked; host configuration remains private.
 - A first report appears, stale reporting is clear, and desktop/mobile and keyboard flows work.
 
 ## Readiness and future distribution

@@ -16,7 +16,7 @@ Treat the dashboard as an operating tool. Keep the crow mark, slate surfaces, wa
 - Attention rows sort first, then names alphabetically.
 - Preserve host-button focus during polling and help disclosure while reading.
 - Use a focused enrollment dialog with naming, inspectable Compose deployment, and first-report confirmation. Keep deployment steps available if a report is delayed; allow an awaiting host to continue setup.
-- Explain Docker access and credentials before downloads. Keep secrets out of commands and rendered text. The downloaded archive is private and contains the actual configuration.
+- Explain Docker access and credentials before setup. The primary action copies a private Bash block that prepares inspectable Compose files; starting containers is separate. Do not render credentials in ordinary instructions or static assets. Clipboard failure reveals a selected, read-only setup field only on request. Clear that field and the in-memory setup on dialog close. The alternative archive contains the same private configuration.
 - Host removal requires an exact-name confirmation. Reporting-token replacement leaves the current token usable until successful activation.
 - Keep setup explanations in contextual help and the first-run state.
 

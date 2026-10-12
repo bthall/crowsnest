@@ -90,14 +90,16 @@
     </form>
     <div id="setup-deploy" hidden>
       <h3>Deploy on <span id="setup-host-name"></span></h3>
-      <p>The package contains readable Compose, Python, proxy, and configuration files. Review them before starting.</p>
+      <p>Copy the setup into a Bash terminal on this host. It creates private Compose files under <code>/srv/docker/docker-dashboard-collector</code> for you to review before starting.</p>
+      <div class="setup-copy-actions"><button id="copy-setup" type="button" class="primary">Copy setup</button><span id="setup-copy-status" role="status"></span></div>
+      <p class="input-help">Includes this host’s private reporting credentials. Keep the clipboard and any terminal history containing it private.</p>
+      <div id="setup-copy-fallback" hidden><label for="setup-copy-text">Select and copy this setup</label><textarea id="setup-copy-text" readonly rows="7" spellcheck="false"></textarea></div>
       <details class="package-details"><summary>Package contents &amp; permissions</summary><dl><dt>compose.yaml</dt><dd>Two services, read-only filesystems, dropped capabilities, no published ports.</dd><dt>collector.py / proxy.cfg</dt><dd>Status collection and the allowed Docker API reads.</dd><dt>collector.json</dt><dd>Private reporting credentials, file mode 0600.</dd></dl></details>
-      <a id="package-download" class="download-link" download="crowsnest-collector.tar">Download Compose package</a>
-      <p class="input-help">Keep this package private. Transfer it securely to the host if you downloaded it elsewhere.</p>
       <label for="sudo-docker" class="checkbox-label"><input id="sudo-docker" type="checkbox" checked> My Docker commands require sudo</label>
-      <p>Run these commands as your normal user. If this directory already has a collector, use Manage host instead.</p>
-      <div class="command-heading"><strong>Deploy with Docker Compose</strong><button id="copy-deploy" type="button" class="secondary">Copy commands</button></div>
+      <p>Review <code>compose.yaml</code>, <code>collector.py</code>, and <code>proxy.cfg</code> in the installation directory. Then run these commands as your normal user.</p>
+      <div class="command-heading"><strong>Start the collector</strong><button id="copy-deploy" type="button" class="secondary">Copy start commands</button></div>
       <pre><code id="deploy-commands"></code></pre>
+      <details class="package-details" id="transfer-details"><summary>Download and transfer instead</summary><a id="package-download" class="download-link" download="crowsnest-collector.tar">Download Compose package</a><p>Keep the package private and transfer it to the host. These commands assume it is at <code>~/Downloads/crowsnest-collector.tar</code>. If a collector is already installed, use Manage host instead.</p><div class="command-heading"><strong>Extract and start</strong><button id="copy-transfer" type="button" class="secondary">Copy commands</button></div><pre><code id="transfer-commands"></code></pre></details>
       <p id="setup-expiry" class="input-help"></p>
       <div class="dialog-actions"><button id="wait-report" type="button" class="primary">I’ve started the collector</button></div>
     </div>

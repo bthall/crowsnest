@@ -16,6 +16,8 @@ GitHub Actions runs these checks on pushes and pull requests. The Security workf
 
 For a live integration check, use a temporary installation on a Docker host. Verify that a non-root collector reads its mode-0600 credentials and that reports arrive at the dashboard. Retain the host credentials privately; never commit generated setup downloads, collector.json, .env, or service tokens.
 
+Copy setup checks execute the generated clipboard block in Bash using the Docker command double. They verify directory and credential permissions, ownership, overwrite refusal, and that preparation does not pull or start containers. Enrollment checks compare copied credentials with the alternative tar download and exercise staged replacement through the new setup format.
+
 ## Secret checks
 
 `npm run check` scans tracked files for common credential patterns and generated configuration files. To include local Git history, run `node scripts/check-secrets.mjs --history`. Review the staged diff as well; the pattern check does not identify every possible secret. See [SECURITY.md](../SECURITY.md).

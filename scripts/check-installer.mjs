@@ -37,6 +37,22 @@ try {
   assert.match(compose,/container_name: docker-dashboard-socket-proxy/);
   assert.match(compose,/user: "\$\{COLLECTOR_UID/);
   const originalConfig=readFileSync(path.join(target,'collector.json'),'utf8');
+  // Execute the actual clipboard wrapper. Preparation must never pull or start containers.
+  const clipboard=readFileSync(path.join(process.env.DOCKER_WATCH_TEST_DIRECTORY||'/tmp','crowsnest-test-copy-setup.sh'),'utf8');
+  const prepared=path.join(root,'copied setup');
+  const copyInput=clipboard.replace("bash <<'CROWSNEST_SETUP'",`bash -s -- '${prepared}' <<'CROWSNEST_SETUP'`);
+  writeFileSync(calls,'');
+  const preparation=spawnSync('bash',[],{input:copyInput,cwd:root,env,encoding:'utf8'});
+  assert.equal(preparation.status,0,preparation.stderr);
+  assert.match(preparation.stdout,/Private Compose files prepared/);
+  assert.equal(statSync(prepared).mode&0o777,0o700);
+  assert.equal(statSync(path.join(prepared,'collector.json')).mode&0o777,0o600);
+  assert.equal(statSync(path.join(prepared,'.env')).mode&0o777,0o600);
+  assert.equal(statSync(path.join(prepared,'collector.json')).uid,process.getuid());
+  assert.doesNotMatch(readFileSync(calls,'utf8'),/compose (?:pull|up)/);
+  const preparedConfig=readFileSync(path.join(prepared,'collector.json'),'utf8');
+  assert.notEqual(spawnSync('bash',[],{input:copyInput,cwd:root,env,encoding:'utf8'}).status,0);
+  assert.equal(readFileSync(path.join(prepared,'collector.json'),'utf8'),preparedConfig);
   assert.notEqual(run(script,[target]).status,0);
   assert.equal(readFileSync(path.join(target,'collector.json'),'utf8'),originalConfig);
   const failed=path.join(root,'failed');
@@ -56,5 +72,5 @@ try {
   const link=path.join(root,'symlink');
   const {symlinkSync}=await import('node:fs');symlinkSync(target,link);
   assert.notEqual(run(script,[link]).status,0);
-  console.log('Passed: installer paths, private credentials, readable code, clean names, overwrite protection, and failed-startup credential retention.');
+  console.log('Passed: copy setup prepares without starting, installer paths, private credentials, readable code, clean names, overwrite protection, and failed-startup credential retention.');
 } finally {rmSync(root,{recursive:true,force:true});}

@@ -60,6 +60,14 @@ if [[ "$EUID" == 0 ]]; then
     chown "$owner_uid:$owner_gid" -- . compose.yaml collector.py proxy.cfg collector.json .env
 fi
 "${DOCKER[@]}" compose config --quiet
+if [[ "${CROWSNEST_PREPARE_ONLY:-0}" == 1 ]]; then
+    printf '\nPrivate Compose files prepared at %s\n' "$target"
+    printf 'Review compose.yaml, collector.py and proxy.cfg before starting.\n'
+    printf 'Then run: cd %q && ' "$target"
+    printf '%q ' "${DOCKER[@]}"
+    printf 'compose up -d\n'
+    exit 0
+fi
 "${DOCKER[@]}" compose pull
 if ! "${DOCKER[@]}" compose up -d; then
     echo "Startup failed. Installation files are retained at $target." >&2

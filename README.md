@@ -17,6 +17,11 @@ Crowsnest is a private dashboard for Docker host and container status. A small o
 <p><img src="docs/screenshots/dashboard-mobile.png" alt="Crowsnest on a narrow screen, with host selection and container status" width="390"></p>
 </details>
 
+<details>
+<summary>Host setup</summary>
+<p><img src="docs/screenshots/enrollment-desktop.png" alt="Crowsnest host setup with copyable preparation and separate Compose start commands" width="680"></p>
+</details>
+
 ## Features
 
 - Multiple Docker hosts in one private dashboard.
@@ -26,7 +31,7 @@ Crowsnest is a private dashboard for Docker host and container status. A small o
 - Installation under `/srv/docker` with user-owned files and private credentials.
 - Search by container or image, plus a filter for containers that need attention.
 - Fleet-wide container and host search with clearly labeled stale reports.
-- Guided Compose enrollment with file review, deployment steps, and first-report confirmation.
+- Copy-and-paste Compose setup, file review, and first-report confirmation, with an optional package download.
 - Host renaming, removal, and staged reporting-token replacement.
 - Recent activity and alerts for stale hosts and unhealthy, restarting, or dead containers.
 - Optional authenticated ntfy notifications, recovery messages, delivery status, and retry backoff.
@@ -41,11 +46,11 @@ You need an existing private Crowsnest dashboard, a Linux host with Docker Engin
 
 1. Open your dashboard and choose **Connect a host**.
 2. Enter a unique host name and choose **Prepare setup**.
-3. Download the Compose package, inspect its files, and transfer it privately to the host.
-4. Follow the displayed Docker Compose commands as your normal user. Choose whether Docker commands need sudo.
+3. Choose **Copy setup** and paste into a Bash terminal on the host to prepare its private Compose files.
+4. Review the files and run the displayed start commands as your normal user. Choose whether Docker commands need sudo.
 5. Leave setup open to confirm the first collector report.
 
-The default directory is `/srv/docker/docker-dashboard-collector`. The commands create a private directory owned by your user and refuse to overwrite an existing installation. No downloaded shell script is needed in the dashboard flow.
+The default directory is `/srv/docker/docker-dashboard-collector`. Setup creates a private directory owned by your user and refuses to overwrite an existing installation. **Download and transfer instead** remains available as an alternative.
 
 Check the collector:
 
@@ -56,7 +61,7 @@ sudo docker compose logs -f collector
 
 Omit sudo if your account already has Docker access. Successful reporting logs `Status delivered: ... containers`. The dashboard should show the host as **Reporting**.
 
-The Compose package contains reporting credentials. Keep it and `collector.json` private. Do not commit generated installation files. A host left awaiting its first report has a **Continue setup** action.
+Copied setup and the Compose package contain reporting credentials. Keep the clipboard, any terminal history containing the setup, and `collector.json` private. Do not commit generated installation files. A host left awaiting its first report has a **Continue setup** action.
 
 See the [installation guide](docs/deployment.md) for custom paths and maintenance.
 
@@ -116,7 +121,7 @@ The product name is Crowsnest. Existing collector filenames, the `docker-dashboa
 
 This version supports one collector installation per Docker daemon and up to 100 registered hosts. A host report supports up to 250 containers and 128 KiB. Rootless Docker requires manual socket-path and user-mapping adjustments. Host management replaces reporting credentials; changing the platform service credential still requires updating every collector.
 
-The current product version is **0.3.0**. See the [changelog](CHANGELOG.md) and [versioning policy](docs/versioning.md).
+The current product version is **0.5.0**. See the [changelog](CHANGELOG.md) and [versioning policy](docs/versioning.md).
 
 GitHub stores source and runs checks. Pushing to this repository does not publish the dashboard; deployment remains managed through ChatGPT Sites.
 

@@ -25,6 +25,6 @@ Omit sudo if your account has Docker access. Redact credentials before sharing a
 
 ## Credentials lost
 
-For an awaiting host, choose **Continue setup** to prepare another Compose package. For an already reporting host, choose **Manage host → Replace reporting token** to prepare a configuration. Apply it within ten minutes and confirm activation. The current token remains valid until the first successful report with the replacement. An expired replacement requires preparing another one; restore the previous private configuration if the collector was already switched to an expired token.
+For an awaiting host, choose **Continue setup** to prepare new copied setup and a matching Compose package. For an already reporting host, choose **Manage host → Replace reporting token** to prepare a configuration. Apply it within ten minutes and confirm activation. The current token remains valid until the first successful report with the replacement. An expired replacement requires preparing another one; restore the previous private configuration if the collector was already switched to an expired token.
 
 If the platform service credential was changed, every collector needs that new value through a private configuration update. Do not post either credential in an issue or message containing diagnostics.

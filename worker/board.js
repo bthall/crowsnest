@@ -3,6 +3,7 @@ let lastError = '', setupSuccess = '', attentionOnly = false;
 let helpInitialized = false;
 let view = 'containers', historyEvents = [], historyError = '', historyLoading = false, historySequence = 0;
 let enrollmentId = null, packageUrl = null, configUrl = null, managedId = null, rotationRevision = null, rotationExpiry = 0;
+let setupCommand = '';
 const $ = id => document.getElementById(id);
 const age = iso => Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 1000));
 const needsAttention = c => c.health === 'unhealthy' || ['restarting', 'dead'].includes(c.state);
@@ -224,7 +225,8 @@ function setupStage(stage) {
 }
 function updateCommands() {
   const docker=$('sudo-docker').checked?'sudo docker':'docker';
-  $('deploy-commands').textContent='test ! -e /srv/docker/docker-dashboard-collector &&\nsudo install -d -m 0700 -o "$(id -u)" -g "$(id -g)" /srv/docker/docker-dashboard-collector &&\ncd /srv/docker/docker-dashboard-collector &&\n(umask 077\n tar --keep-old-files -xf ~/Downloads/crowsnest-collector.tar &&\n printf \'COLLECTOR_UID=%s\\nCOLLECTOR_GID=%s\\n\' "$(id -u)" "$(id -g)" > .env) &&\n'+docker+' compose config --quiet &&\n'+docker+' compose up -d';
+  $('deploy-commands').textContent='cd /srv/docker/docker-dashboard-collector &&\n'+docker+' compose config --quiet &&\n'+docker+' compose up -d';
+  $('transfer-commands').textContent='test ! -e /srv/docker/docker-dashboard-collector &&\nsudo install -d -m 0700 -o "$(id -u)" -g "$(id -g)" /srv/docker/docker-dashboard-collector &&\ncd /srv/docker/docker-dashboard-collector &&\n(umask 077\n tar --keep-old-files -xf ~/Downloads/crowsnest-collector.tar &&\n printf \'COLLECTOR_UID=%s\\nCOLLECTOR_GID=%s\\n\' "$(id -u)" "$(id -g)" > .env) &&\n'+docker+' compose config --quiet &&\n'+docker+' compose up -d';
   $('log-command').textContent='cd /srv/docker/docker-dashboard-collector\n'+docker+' compose logs --tail=30 collector';
 }
 function openSetup() {
@@ -234,15 +236,21 @@ function openSetup() {
   setupStage(0);$('setup').showModal();$('hostname').focus();
 }
 async function preparePackage(response,name,resumed=false) {
+  if(!$('setup').open){await response.body?.cancel();return;}
+  const data=await response.json();
+  if(!$('setup').open)return;
+  if(!/^[a-f0-9-]{36}$/.test(data.hostId) || typeof data.setupCommand!=='string' || !data.setupCommand || typeof data.packageBase64!=='string')throw new Error('The setup response is incomplete. Close and choose Continue setup.');
+  const archive=Uint8Array.from(atob(data.packageBase64),c=>c.charCodeAt(0));
   if(packageUrl)URL.revokeObjectURL(packageUrl);
-  enrollmentId=response.headers.get('X-Crowsnest-Host-Id');
-  if(!enrollmentId)throw new Error('The package response is incomplete. Refresh and choose Continue setup.');
-  packageUrl=URL.createObjectURL(await response.blob());
+  enrollmentId=data.hostId;setupCommand=data.setupCommand;
+  $('setup-copy-text').value='';$('setup-copy-fallback').hidden=true;$('setup-copy-status').textContent='';$('transfer-details').open=false;
+  $('copy-deploy').textContent='Copy start commands';$('copy-transfer').textContent='Copy commands';
+  packageUrl=URL.createObjectURL(new Blob([archive],{type:'application/x-tar'}));
   $('package-download').href=packageUrl;$('setup-host-name').textContent=name;
   $('setup-expiry').textContent=resumed?'Start this collector within ten minutes. If that window expires, close and choose Continue setup again.':'';
   updateCommands(); setupStage(1);
   await refresh(name);
-  if($('setup').open)$('package-download').focus();
+  if($('setup').open)$('copy-setup').focus();
 }
 function updateEnrollment() {
   if(enrollmentId && $('setup').open) {
@@ -261,19 +269,26 @@ function updateEnrollment() {
 async function resumeSetup() {
   const host=hosts.find(h=>h.id===selected);if(!host)return;
   openSetup();$('hostname').value=host.name;$('prepare').disabled=true;
-  try{await preparePackage(await mutate('/api/hosts/'+host.id+'/collector','POST',{format:'compose'}),host.name,true);}
+  try{await preparePackage(await mutate('/api/hosts/'+host.id+'/collector','POST',{format:'setup'}),host.name,true);}
   catch(error){showError('setup-message',error);}
   finally{$('prepare').disabled=false;}
 }
-async function copyCommands() {
-  try{await navigator.clipboard.writeText($('deploy-commands').textContent);$('copy-deploy').textContent='Copied';setTimeout(()=>$('copy-deploy').textContent='Copy commands',2000);}
+async function copyCommands(commandId,buttonId,label) {
+  try{await navigator.clipboard.writeText($(commandId).textContent);$(buttonId).textContent='Copied';setTimeout(()=>$(buttonId).textContent=label,2000);}
   catch{showError('setup-message',new Error('Clipboard access was blocked. Select and copy the commands above.'));}
+}
+async function copySetup() {
+  if(!setupCommand)return;
+  try{await navigator.clipboard.writeText(setupCommand);$('setup-copy-fallback').hidden=true;$('setup-copy-text').value='';$('setup-copy-status').textContent='Copied. Paste into Bash on this host.';}
+  catch{$('setup-copy-status').textContent='Clipboard access was blocked. Copy the setup below.';$('setup-copy-fallback').hidden=false;$('setup-copy-text').value=setupCommand;$('setup-copy-text').focus();$('setup-copy-text').select();}
 }
 $('add').onclick=openSetup;$('empty-add').onclick=openSetup;
 for(const id of ['cancel','cancel-bottom','finish-setup'])$(id).onclick=()=>{$('setup').close();};
-$('setup').addEventListener('close',()=>{if(packageUrl){URL.revokeObjectURL(packageUrl);packageUrl=null;}$('package-download').removeAttribute('href');});
+$('setup').addEventListener('close',()=>{if(packageUrl){URL.revokeObjectURL(packageUrl);packageUrl=null;}setupCommand='';$('setup-copy-text').value='';$('setup-copy-fallback').hidden=true;$('setup-copy-status').textContent='';$('package-download').removeAttribute('href');});
 $('refresh').onclick=()=>refresh();$('fleet-view').onclick=()=>selectHost(null);
-$('search').oninput=render;$('sudo-docker').onchange=updateCommands;$('copy-deploy').onclick=copyCommands;
+$('search').oninput=render;$('sudo-docker').onchange=updateCommands;$('copy-setup').onclick=copySetup;
+$('copy-deploy').onclick=()=>copyCommands('deploy-commands','copy-deploy','Copy start commands');
+$('copy-transfer').onclick=()=>copyCommands('transfer-commands','copy-transfer','Copy commands');
 $('wait-report').onclick=()=>{setupStage(2);updateEnrollment();refresh();$('finish-setup').focus();};
 $('back-deploy').onclick=()=>setupStage(1);
 $('resume-setup').onclick=resumeSetup;
@@ -285,7 +300,7 @@ $('setup-form').onsubmit=async event=>{
   event.preventDefault();const name=$('hostname').value.trim();
   if(!/^[a-zA-Z0-9][a-zA-Z0-9 ._-]{0,63}$/.test(name)){$('hostname').setCustomValidity('Start with a letter or number. Use letters, numbers, spaces, dots, dashes, or underscores.');$('hostname').reportValidity();return;}
   $('prepare').disabled=true;$('prepare').textContent='Preparing…';$('setup-message').hidden=true;
-  try{await preparePackage(await mutate('/api/hosts','POST',{name,format:'compose'}),name);}
+  try{await preparePackage(await mutate('/api/hosts','POST',{name,format:'setup'}),name);}
   catch(error){showError('setup-message',error);}
   finally{$('prepare').disabled=false;$('prepare').textContent='Prepare setup';}
 };

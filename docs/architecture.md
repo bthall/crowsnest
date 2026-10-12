@@ -14,7 +14,7 @@ The collector uses a platform service credential to reach the private Site and a
 
 ## Enrollment and lifecycle
 
-The dashboard requests a standard tar package containing inspectable Compose, collector, proxy, and configuration files, with private credential-file permissions. A three-step flow follows naming, deployment, and the first report. The registration API also retains its previous script response when a Compose format is not requested.
+The dashboard requests private setup JSON containing a copyable Bash preparation block and a standard tar package with matching credentials. The block writes inspectable Compose, collector, proxy, and configuration files with private credential-file permissions, without starting containers. A three-step flow follows naming, deployment, and the first report. The registration API retains its previous Compose and script responses for compatibility. Private setup is only issued through authenticated same-origin requests; no public download endpoint is added.
 
 Replacement tokens are staged as hashes with ten-minute activation deadlines. The original remains usable until a validated report arrives using the replacement; that report promotes the new hash and clears the pending replacement. Host lists expose only a non-secret credential revision for activation feedback. Removal deletes the registration, snapshot, and activity; subsequent reports for that host are rejected.
 

@@ -3,6 +3,32 @@
 Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 
+## [0.7.2] - 2026-10-12
+
+### Fixed
+
+- Collectors reject redirects before forwarding reporting credentials, validate their HTTPS configuration, bound responses, and verify ingestion acknowledgements.
+- Container inspections run with four workers and a collection admission deadline. Containers removed between listing and inspection no longer prevent a report; other inspection failures still reject the collection.
+- Reporting cadence accounts for collection time instead of always adding another 30 seconds.
+- Conditional host writes prevent overlapping renames, credential issuance, activation, or deletion from overwriting newer registration state.
+- Container notification baselines survive stale-host alerts, preventing repeated alerts and missed recoveries when reporting resumes.
+- Invalid JSON root types and malformed UTF-8 return client errors; partial R2 listing pages no longer trigger a false host limit.
+- Fleet polling uses bounded concurrent storage reads; single-host activity reads only that host's records.
+- Overlapping dashboard refreshes share their request, and delayed clipboard operations cannot alter a reopened dialog or different container.
+- Hidden container tables are not rebuilt on every refresh, and host-button lookups use a map.
+- Notifier configuration and response shapes receive explicit validation; README version now matches the package.
+- The local secret checker recognizes quoted JSON/Python credential keys, with isolated Git-fixture coverage.
+
+### Changed
+
+- CI runs the regression suite on Python 3.12 and the collector's Python 3.13 runtime, using a pinned setup action.
+- Shared R2 test storage models conditional writes and pagination; added interleaving, redirect, churn, bounds, and recovery regressions.
+- Documented review findings, remaining storage concurrency limits, collector behavior, and upgrade steps.
+
+### Compatibility
+
+- Existing collectors remain accepted. Update each collector through **Manage host → Update collector** to receive the redirect protection and reporting fixes. Existing credentials, installation directories, Compose names, and report fields are retained.
+
 ## [0.7.1] - 2026-10-12
 
 ### Changed

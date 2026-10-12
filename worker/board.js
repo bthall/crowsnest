@@ -4,6 +4,7 @@ let helpInitialized = false, groupByProject = false;
 let view = 'containers', historyEvents = [], historyError = '', historyLoading = false, historySequence = 0;
 let enrollmentId = null, packageUrl = null, configUrl = null, managedId = null, rotationRevision = null, rotationExpiry = 0;
 let setupCommand = '', setupSession = 0, managementSession = 0;
+let refreshPromise = null;
 let availableCollectorVersion = null, collectorUpdateTarget = null, collectorUpdateRequestedAt = 0, collectorUpdatePreviousVersion = null, collectorUpdateBusy = false;
 let detailSelection = null, detailEvents = [], detailHistoryError = '', detailHistoryLoading = false, detailHistorySequence = 0, detailHistoryController = null, detailLegacyMatches = false;
 const $ = id => document.getElementById(id);
@@ -41,11 +42,11 @@ function syncHosts() {
     $('hosts').replaceChildren(node('p', '', loaded ? 'No hosts connected.' : 'Loading hosts…'));
     return;
   }
-  for (const child of [...$('hosts').children]) {
-    if (!hosts.some(h => h.id === child.dataset.host)) child.remove();
-  }
+  const hostIds=new Set(hosts.map(h=>h.id));
+  for (const child of [...$('hosts').children])if(!hostIds.has(child.dataset.host))child.remove();
+  const buttons=new Map([...$('hosts').children].map(child=>[child.dataset.host,child]));
   for (const host of hosts) {
-    let button = [...$('hosts').children].find(el => el.dataset.host === host.id);
+    let button = buttons.get(host.id);
     if (!button) {
       button = node('button', 'host');
       button.dataset.host = host.id;
@@ -193,7 +194,7 @@ function render() {
     $('empty-title').textContent = attentionOnly && !query ? 'No containers need attention' : 'No matching containers';
     $('empty-copy').textContent = attentionOnly && !query ? 'No unhealthy, restarting, or dead containers in the latest report.' : 'Try another name or image, or clear the filters to see all containers.';
   }
-  renderRows(visible);
+  if(view==='containers' && !inspecting)renderRows(visible);
   renderPanels();
   updateEnrollment();
   updateMaintenance();
@@ -201,7 +202,14 @@ function render() {
   updateCollectorVersion();
 }
 async function refresh(selectName) {
-  if (loading) return;
+  if(!refreshPromise)refreshPromise=loadHosts().finally(()=>{refreshPromise=null;});
+  await refreshPromise;
+  if(typeof selectName==='string'){
+    const id=hosts.find(h=>h.name===selectName)?.id;
+    if(id && id!==selected)selectHost(id);
+  }
+}
+async function loadHosts() {
   loading = true; $('refresh').disabled = true; $('refresh-label').textContent = 'Refreshing…';
   try {
     const response = await fetch('/api/hosts', {cache: 'no-store', signal: AbortSignal.timeout(10000)});
@@ -210,7 +218,6 @@ async function refresh(selectName) {
     const data = await response.json();
     if (!Array.isArray(data.hosts)) throw new Error('Unexpected status response. Try Refresh.');
     hosts = data.hosts;availableCollectorVersion=validCollectorVersion(data.availableCollectorVersion)?data.availableCollectorVersion:null;
-    if (typeof selectName === 'string') selected = hosts.find(h => h.name === selectName)?.id || selected;
     if (selected !== null && !hosts.some(h => h.id === selected)) selected = null;
     loaded = true; lastError = '';
     $('poll-status').textContent = 'Refreshes every 15 seconds';
@@ -287,8 +294,9 @@ async function loadContainerHistory() {
 $('close-details').onclick=()=>closeContainerDetails();$('detail-history-retry').onclick=loadContainerHistory;
 $('container-details').addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();closeContainerDetails();}});
 $('copy-container-id').onclick=async()=>{
-  try{await navigator.clipboard.writeText($('detail-id').textContent);$('detail-copy-status').textContent='Container ID copied.';}
-  catch{const range=document.createRange();range.selectNodeContents($('detail-id'));const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);$('detail-copy-status').textContent='Clipboard blocked. Copy the selected container ID.';}
+  const selection=detailSelection,id=$('detail-id').textContent;if(!selection)return;
+  try{await navigator.clipboard.writeText(id);if(detailSelection===selection)$('detail-copy-status').textContent='Container ID copied.';}
+  catch{if(detailSelection!==selection)return;const range=document.createRange();range.selectNodeContents($('detail-id'));const selectedText=window.getSelection();selectedText.removeAllRanges();selectedText.addRange(range);$('detail-copy-status').textContent='Clipboard blocked. Copy the selected container ID.';}
 };
 function updateCollectorVersion() {
   const host=hosts.find(h=>h.id===managedId);if(!host)return;
@@ -386,8 +394,8 @@ async function preparePackage(response,name,resumed,session) {
   $('setup-terminal-host').textContent=name;$('setup-start-host').textContent=name;
   $('setup-expiry').textContent=resumed?'Start this collector within ten minutes. If that window expires, close and choose Continue setup again.':'';
   updateCommands(); setupStage(1);
-  await refresh(name);
-  if(setupCurrent(session))$('copy-setup').focus();
+  await refresh();
+  if(setupCurrent(session)){selectHost(data.hostId);$('copy-setup').focus();}
 }
 function updateEnrollment() {
   if(enrollmentId && $('setup').open) {
@@ -412,13 +420,15 @@ async function resumeSetup() {
   finally{if(setupCurrent(session))$('prepare').disabled=false;}
 }
 async function copyCommands(commandId,buttonId,label) {
-  try{await navigator.clipboard.writeText($(commandId).textContent);$(buttonId).textContent='Copied';setTimeout(()=>$(buttonId).textContent=label,2000);}
-  catch{showError('setup-message',new Error('Clipboard access was blocked. Select and copy the commands above.'));}
+  const session=setupSession,command=$(commandId).textContent;
+  try{await navigator.clipboard.writeText(command);if(!setupCurrent(session))return;$(buttonId).textContent='Copied';setTimeout(()=>{if(setupCurrent(session))$(buttonId).textContent=label;},2000);}
+  catch{if(setupCurrent(session))showError('setup-message',new Error('Clipboard access was blocked. Select and copy the commands above.'));}
 }
 async function copySetup() {
   if(!setupCommand)return;
-  try{await navigator.clipboard.writeText(setupCommand);$('setup-copy-fallback').hidden=true;$('setup-copy-text').value='';$('setup-copy-status').textContent='Copied. Paste and run in Bash on '+$('setup-host-name').textContent+'. Continue when the terminal says files are prepared.';}
-  catch{$('setup-copy-status').textContent='Clipboard access was blocked. Copy the setup below.';$('setup-copy-fallback').hidden=false;$('setup-copy-text').value=setupCommand;$('setup-copy-text').focus();$('setup-copy-text').select();}
+  const session=setupSession,command=setupCommand,name=$('setup-host-name').textContent;
+  try{await navigator.clipboard.writeText(command);if(!setupCurrent(session))return;$('setup-copy-fallback').hidden=true;$('setup-copy-text').value='';$('setup-copy-status').textContent='Copied. Paste and run in Bash on '+name+'. Continue when the terminal says files are prepared.';}
+  catch{if(!setupCurrent(session))return;$('setup-copy-status').textContent='Clipboard access was blocked. Copy the setup below.';$('setup-copy-fallback').hidden=false;$('setup-copy-text').value=command;$('setup-copy-text').focus();$('setup-copy-text').select();}
 }
 $('add').onclick=openSetup;$('empty-add').onclick=openSetup;
 for(const id of ['cancel','cancel-bottom','finish-setup'])$(id).onclick=()=>{$('setup').close();};
@@ -479,8 +489,9 @@ $('prepare-update').onclick=async()=>{
   catch(error){if(managementCurrent(session,id))showError('management-message',error);}finally{if(managementCurrent(session,id)){collectorUpdateBusy=false;updateCollectorVersion();}}
 };
 $('copy-update').onclick=async()=>{
-  try{await navigator.clipboard.writeText($('collector-update-command').value);$('collector-update-status').textContent='Copied. Paste and run on the host as the installation owner.';}
-  catch{$('collector-update-status').textContent='Clipboard blocked. Select and copy the command above.';$('collector-update-command').focus();$('collector-update-command').select();}
+  const session=managementSession,id=managedId,command=$('collector-update-command').value;
+  try{await navigator.clipboard.writeText(command);if(managementCurrent(session,id))$('collector-update-status').textContent='Copied. Paste and run on the host as the installation owner.';}
+  catch{if(!managementCurrent(session,id))return;$('collector-update-status').textContent='Clipboard blocked. Select and copy the command above.';$('collector-update-command').focus();$('collector-update-command').select();}
 };
 $('rename-form').onsubmit=async event=>{
   const id=managedId, session=managementSession;

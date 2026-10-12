@@ -12,6 +12,8 @@ ChatGPT Sites enforces access to the private dashboard. Worker viewer routes req
 
 A collector uses two credentials: a platform service credential to reach the private Site and a host-specific reporting token. The Worker stores the host token as a SHA-256 hash. Possession of the service credential is privileged; keep all collector configuration private.
 
+Collector versions from 0.7.2 require an HTTPS reporting origin, retain certificate verification, and deny redirects before either reporting credential can be forwarded. Apply the source-only collector update to existing hosts to receive this protection. Renames and staged-token writes use R2 ETag preconditions to prevent stale registration writes from replacing newer credentials.
+
 The socket proxy permits only Docker version, container list, and container inspection reads. A read-only socket mount alone does not restrict API methods. Container inspection can expose sensitive local information, so the collector and proxy must remain trusted even though only selected status fields are transmitted.
 
 ## Credential handling

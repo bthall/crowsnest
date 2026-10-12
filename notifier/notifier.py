@@ -1,5 +1,6 @@
 """Optional unattended sweep runner for private Crowsnest Sites; standard library only."""
 import json
+import re
 import ssl
 import time
 import urllib.error
@@ -14,11 +15,13 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def check_config(config):
-    url = urllib.parse.urlsplit(config.get("url", ""))
+    if not isinstance(config, dict) or not isinstance(config.get("url"), str):
+        raise ValueError("Invalid private Site configuration")
+    url = urllib.parse.urlsplit(config["url"])
     if (url.scheme != "https" or not url.hostname or url.username or url.password
             or url.port not in (None, 443) or url.path not in ("", "/")
             or url.query or url.fragment or not isinstance(config.get("serviceToken"), str)
-            or not config["serviceToken"]):
+            or not re.fullmatch(r"[\x21-\x7e]{1,8192}", config["serviceToken"])):
         raise ValueError("Invalid private Site configuration")
     return config["url"].rstrip("/") + "/api/notifications/sweep"
 
@@ -39,10 +42,10 @@ def sweep(config, opener):
             return json.loads(body)
 
     result = call("POST")
-    if result.get("ok") is not True:
+    if not isinstance(result, dict) or result.get("ok") is not True:
         raise ValueError("Sweep was not accepted")
     saved = call("GET")
-    if not saved.get("at") or (not result.get("skipped") and saved["at"] != result.get("at")):
+    if not isinstance(saved, dict) or not saved.get("at") or (not result.get("skipped") and saved["at"] != result.get("at")):
         raise ValueError("Sweep readback did not match")
     return saved
 

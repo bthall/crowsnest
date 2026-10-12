@@ -2,14 +2,11 @@ import assert from 'node:assert/strict';
 import {readFile,writeFile,mkdir,stat,symlink} from 'node:fs/promises';
 import {spawnSync} from 'node:child_process';
 import {join} from 'node:path';
+import {testBucket} from './test-storage.mjs';
 const source=await readFile('dist/server/index.js','utf8');
 const worker=(await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'))).default;
 const objects=new Map(), requests=[];
-const env={SITE_ORIGIN:'https://board.example.com',COLLECTOR_SERVICE_TOKEN:'test-service-token',NTFY_URL:'https://ntfy.example.com/fleet',NTFY_ENABLED:'true',BUCKET:{
-  async get(key){const v=objects.get(key);return v===undefined?null:{json:async()=>JSON.parse(v)};},
-  async put(key,v){objects.set(key,v);},async delete(key){objects.delete(key);},
-  async list({prefix}){return {objects:[...objects.keys()].filter(k=>k.startsWith(prefix)).map(key=>({key})),truncated:false};},
-}};
+const env={SITE_ORIGIN:'https://board.example.com',COLLECTOR_SERVICE_TOKEN:'test-service-token',NTFY_URL:'https://ntfy.example.com/fleet',NTFY_ENABLED:'true',BUCKET:testBucket(objects)};
 const viewer={'oai-authenticated-user-id':'owner',Origin:env.SITE_ORIGIN};
 const call=(path,method='GET',data,headers=viewer)=>worker.fetch(new Request(env.SITE_ORIGIN+path,{method,headers,body:data===undefined?undefined:JSON.stringify(data)}),env);
 const set=(key,v)=>objects.set(key,JSON.stringify(v));

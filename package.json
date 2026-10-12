@@ -1,6 +1,6 @@
 {
   "name": "crowsnest",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "private": true,
   "description": "Private Docker dashboard with a restricted outbound collector for each host.",
   "type": "module",

@@ -19,7 +19,10 @@ Omit sudo if your account has Docker access. Redact credentials before sharing a
 | `Reporting failed: HTTP 401` | Check that the platform service credential is valid for the private Site. Coordinate a credential update with the owner. |
 | `Reporting failed: HTTP 403` | Check that the host token and host ID belong to the same registration. Keep credentials from one installation together. |
 | `Reporting failed: HTTP 404` | Check that the dashboard URL is correct and that the host registration still exists. |
-| Collection error with no successful reports | Check the socket path, proxy logs, and the 250-container limit. The collector does not send partial snapshots. |
+| `Reporting failed: HTTP 409` | A management change overlapped token activation. The collector retries automatically; if it persists, prepare current credentials through Manage host. |
+| `Reporting failed: HTTP 301/302/303/307/308` | The reporting endpoint redirects. Use the stable generated HTTPS Site origin; collectors reject redirects to protect credentials. |
+| Collection error with no successful reports | Check the socket path, proxy logs, the 250-container/128-KiB limits, and response acknowledgement. Non-404 inspection failures prevent submission. |
+| `Collection failed: TimeoutError` | Docker inspections exceeded their admission budget or a socket timed out. Check the proxy and Docker daemon; existing status remains marked stale until a full report succeeds. |
 | Invalid origin during registration | Access registration through the same origin as the dashboard page. Confirm the deployed version supports the attached custom domain. |
 | Directory or named container already exists | Inspect the existing installation and use Manage host for credential replacement. Do not extract a new package over it. Only one collector is supported per Docker daemon. |
 

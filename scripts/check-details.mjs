@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
+import {testBucket} from './test-storage.mjs';
 const version=JSON.parse(await readFile('package.json','utf8')).version;
 const helpers=await readFile('worker/versions.js','utf8');
 const {validCollectorVersion,compareCollectorVersions}=await import('data:text/javascript;base64,'+Buffer.from(helpers+'\nexport {validCollectorVersion,compareCollectorVersions};').toString('base64'));
@@ -11,7 +12,7 @@ assert.equal(compareCollectorVersions('1.0.0+first','1.0.0+second'),0);assert.eq
 const source=await readFile('dist/server/index.js','utf8');
 const worker=(await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'))).default;
 const objects=new Map();
-const env={SITE_ORIGIN:'https://board.example.com',COLLECTOR_SERVICE_TOKEN:'test-service-token',BUCKET:{async get(k){const v=objects.get(k);return v===undefined?null:{json:async()=>JSON.parse(v)};},async put(k,v){objects.set(k,v);},async delete(k){objects.delete(k);},async list({prefix}){return{objects:[...objects.keys()].filter(k=>k.startsWith(prefix)).map(key=>({key})),truncated:false};}}};
+const env={SITE_ORIGIN:'https://board.example.com',COLLECTOR_SERVICE_TOKEN:'test-service-token',BUCKET:testBucket(objects)};
 const viewer={'oai-authenticated-user-id':'owner',Origin:env.SITE_ORIGIN};
 const call=(path,method='GET',data,headers=viewer)=>worker.fetch(new Request(env.SITE_ORIGIN+path,{method,headers,body:data===undefined?undefined:JSON.stringify(data)}),env);
 const setup=await (await call('/api/hosts','POST',{name:'lighthouse',format:'setup'})).json();

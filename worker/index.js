@@ -26,7 +26,9 @@ async function readJson(request, max=131072) {
   const chunks=[]; let size=0;
   while(true) { const {done,value}=await reader.read(); if(done)break; size+=value.length; if(size>max) { await reader.cancel(); throw new Error('Report too large'); } chunks.push(value); }
   const bytes=new Uint8Array(size); let i=0; for(const c of chunks){bytes.set(c,i); i+=c.length;}
-  return JSON.parse(new TextDecoder().decode(bytes));
+  const data=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
+  if(!data || typeof data!=='object' || Array.isArray(data))throw new Error('Expected a JSON object');
+  return data;
 }
 function validatedReport(data) {
   if(!data || !Array.isArray(data.containers) || data.containers.length>250) throw new Error('Invalid containers');
@@ -72,7 +74,11 @@ function tar(files) {
   let offset=0; for(const chunk of chunks){result.set(chunk,offset);offset+=chunk.length;}
   return result;
 }
-function collectorConfig(env,id,token) {return {url:env.SITE_ORIGIN,hostId:id,hostToken:token,serviceToken:env.COLLECTOR_SERVICE_TOKEN};}
+function collectorReady(env) {
+  const origin=dashboardOrigin(env.SITE_ORIGIN);
+  return !!origin && !new URL(origin).port && typeof env.COLLECTOR_SERVICE_TOKEN==='string' && /^[\x21-\x7e]{1,8192}$/.test(env.COLLECTOR_SERVICE_TOKEN);
+}
+function collectorConfig(env,id,token) {return {url:dashboardOrigin(env.SITE_ORIGIN),hostId:id,hostToken:token,serviceToken:env.COLLECTOR_SERVICE_TOKEN};}
 function collectorDownload(config,format='compose') {
   const downloadHeaders={...headers,'X-Crowsnest-Host-Id':config.hostId};
   if(format==='config')return new Response(JSON.stringify(config,null,2)+'\n',{headers:{...downloadHeaders,'Content-Type':'application/json','Content-Disposition':'attachment; filename="collector.json"'}});
@@ -90,6 +96,10 @@ async function uniqueName(bucket,name,except) {
     cursor=list.truncated?list.cursor:undefined;
   }while(cursor);
   return true;
+}
+async function writeHost(bucket,object,host) {
+  // Reject stale management/reporting writes instead of replacing newer credentials.
+  return bucket.put('hosts/'+host.id+'.json',JSON.stringify(host),{onlyIf:{etagMatches:object.etag}});
 }
 function event(kind,text,at=new Date().toISOString()) {return {kind,text,at};}
 function containerEvent(kind,text,c,at) {return {...event(kind,text,at),containerId:c.id,containerName:c.name};}
@@ -177,7 +187,7 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
       if(replacement) {
         host.tokenHash=tokenHash; delete host.pendingTokenHash; delete host.pendingTokenExpiresAt;
         host.tokenRevision=(host.tokenRevision||0)+1;
-        await env.BUCKET.put('hosts/'+host.id+'.json',JSON.stringify(host));
+        if(!await writeHost(env.BUCKET,object,host))return json({error:'Host changed during token activation. Retry the report.'},409);
       }
       await env.BUCKET.put('snapshots/'+host.id+'.json',JSON.stringify(report));
       // Optional history failures must not turn a delivered report into an ingestion failure.
@@ -194,24 +204,35 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
       if(!env.BUCKET)return json({error:'Storage unavailable'},503);
       const hosts=[]; let cursor;
       do {const list=await env.BUCKET.list({prefix:'hosts/',cursor});
-        for(const item of list.objects) {
-          const config=await env.BUCKET.get(item.key); if(!config)continue;
-          const h=await config.json(), snapshot=await env.BUCKET.get('snapshots/'+h.id+'.json');
-          const maintenance=await hostMaintenance(env.BUCKET,h.id);
-          hosts.push({id:h.id,name:h.name,createdAt:h.createdAt,credentialRevision:h.tokenRevision||0,maintenanceUntil:maintenance.until||null,snapshot:snapshot?await snapshot.json():null});
+        for(let i=0;i<list.objects.length;i+=5) {
+          const batch=await Promise.all(list.objects.slice(i,i+5).map(async item=>{
+            const config=await env.BUCKET.get(item.key);if(!config)return null;
+            const h=await config.json();
+            const [snapshot,maintenance]=await Promise.all([env.BUCKET.get('snapshots/'+h.id+'.json'),hostMaintenance(env.BUCKET,h.id)]);
+            return {id:h.id,name:h.name,createdAt:h.createdAt,credentialRevision:h.tokenRevision||0,maintenanceUntil:maintenance.until||null,snapshot:snapshot?await snapshot.json():null};
+          }));
+          hosts.push(...batch.filter(Boolean));
         } cursor=list.truncated?list.cursor:undefined;
       }while(cursor);
       return json({hosts,availableCollectorVersion:VERSION});
     }
     if(path==='/api/hosts' && request.method==='POST') {
       if(!sameOrigin(request))return json({error:'Invalid origin'},403);
-      if(!env.BUCKET || !env.COLLECTOR_SERVICE_TOKEN)return json({error:'Collector setup unavailable'},503);
+      if(!env.BUCKET || !collectorReady(env))return json({error:'Collector setup unavailable'},503);
       let data; try{data=await readJson(request,2048);}catch{return json({error:'Invalid host name'},400);}
       if(!validName(data.name))return json({error:'Use a host name up to 64 characters'},400);
       if(data.format!==undefined && !['compose','script','setup'].includes(data.format))return json({error:'Unknown collector format'},400);
-      const list=await env.BUCKET.list({prefix:'hosts/',limit:101});
-      if(list.truncated || list.objects.length>=100)return json({error:'Host limit reached'},409);
-      for(const item of list.objects){const h=await (await env.BUCKET.get(item.key)).json();if(h.name.toLowerCase()===data.name.toLowerCase())return json({error:'That host already exists. Use a unique name.'},409);}
+      let cursor,count=0;
+      do {
+        const list=await env.BUCKET.list({prefix:'hosts/',limit:101,cursor});
+        for(const item of list.objects){
+          const object=await env.BUCKET.get(item.key);if(!object)continue;
+          const h=await object.json();
+          if(++count>=100)return json({error:'Host limit reached'},409);
+          if(h.name.toLowerCase()===data.name.toLowerCase())return json({error:'That host already exists. Use a unique name.'},409);
+        }
+        cursor=list.truncated?list.cursor:undefined;
+      }while(cursor);
       const id=crypto.randomUUID(), token=crypto.randomUUID()+crypto.randomUUID();
       await env.BUCKET.put('hosts/'+id+'.json',JSON.stringify({id,name:data.name,tokenHash:await hash(token),createdAt:new Date().toISOString()}));
       if(['compose','setup'].includes(data.format))return collectorDownload(collectorConfig(env,id,token),data.format);
@@ -236,7 +257,7 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
         if(!validName(data.name))return json({error:'Use a host name up to 64 characters'},400);
         if(!await uniqueName(env.BUCKET,data.name,host.id))return json({error:'That host name is already in use'},409);
         const old=host.name;host.name=data.name;
-        await env.BUCKET.put('hosts/'+host.id+'.json',JSON.stringify(host));
+        if(!await writeHost(env.BUCKET,obj,host))return json({error:'Host changed. Refresh before renaming it.'},409);
         try{if(old!==host.name)await recordHistory(env.BUCKET,host.id,[event('host','Renamed from '+old+' to '+host.name)]);}catch{console.error('History write failed');}
         return json({ok:true});
       }
@@ -251,12 +272,12 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
       }
       if(hostRoute[2]==='collector' && request.method==='POST') {
         if(data.format==='update')return json({updateCommand:collectorUpdate(),collectorVersion:VERSION});
-        if(!env.COLLECTOR_SERVICE_TOKEN)return json({error:'Collector setup unavailable'},503);
+        if(!collectorReady(env))return json({error:'Collector setup unavailable'},503);
         if(!['compose','config','setup'].includes(data.format))return json({error:'Choose a collector package or configuration'},400);
         const token=crypto.randomUUID()+crypto.randomUUID();
         host.pendingTokenHash=await hash(token);
         host.pendingTokenExpiresAt=new Date(Date.now()+10*60000).toISOString();
-        await env.BUCKET.put('hosts/'+host.id+'.json',JSON.stringify(host));
+        if(!await writeHost(env.BUCKET,obj,host))return json({error:'Host changed. Refresh before preparing credentials.'},409);
         return collectorDownload(collectorConfig(env,host.id,token),data.format);
       }
     }
@@ -283,6 +304,14 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
         return json({events:events.slice(0,100),legacyMatches:events.some(e=>e.matchedBy==='name')});
       }
       const events=[];let cursor;
+      if(id) {
+        const object=await env.BUCKET.get('hosts/'+id+'.json');
+        if(!object)return json({error:'Unknown host'},404);
+        const host=await object.json(),history=await env.BUCKET.get('history/'+id+'.json');
+        if(history)for(const e of await history.json())if(Date.parse(e.at)>Date.now()-30*86400000)events.push({...e,hostId:host.id,hostName:host.name});
+        events.sort((a,b)=>Date.parse(b.at)-Date.parse(a.at));
+        return json({events:events.slice(0,100)});
+      }
       do {
         const list=await env.BUCKET.list({prefix:'hosts/',cursor});
         for(const item of list.objects){

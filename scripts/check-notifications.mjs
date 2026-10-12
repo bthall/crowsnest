@@ -1,13 +1,10 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
+import {testBucket} from './test-storage.mjs';
 const source=await readFile('dist/server/index.js','utf8');
 const worker=(await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'))).default;
 const objects=new Map(), requests=[];
-const env={SITE_ORIGIN:'https://board.example.com',COLLECTOR_SERVICE_TOKEN:'test-service-token',NTFY_URL:'https://ntfy.example.com/fleet',NTFY_TOKEN:'test-ntfy-token',BUCKET:{
-  async get(key){const value=objects.get(key);return value===undefined?null:{json:async()=>JSON.parse(value)};},
-  async put(key,value){objects.set(key,value);},async delete(key){objects.delete(key);},
-  async list({prefix}){return {objects:[...objects.keys()].filter(key=>key.startsWith(prefix)).map(key=>({key})),truncated:false};},
-}};
+const env={SITE_ORIGIN:'https://board.example.com',COLLECTOR_SERVICE_TOKEN:'test-service-token',NTFY_URL:'https://ntfy.example.com/fleet',NTFY_TOKEN:'test-ntfy-token',BUCKET:testBucket(objects)};
 const viewer={'oai-authenticated-user-id':'owner',Origin:env.SITE_ORIGIN};
 const call=(path,method='GET',data,headers=viewer)=>worker.fetch(new Request(env.SITE_ORIGIN+path,{method,headers,body:data===undefined?undefined:JSON.stringify(data)}),env);
 const originalFetch=globalThis.fetch;
@@ -49,6 +46,21 @@ try {
   let sweep=await (await call('/api/notifications/sweep','POST',{},sweepHeaders)).json();assert.equal(sweep.sent,1);assert.match(JSON.parse(requests.at(-1).options.body).message,/No collector report/);
   sweep=await (await call('/api/notifications/sweep','POST',{},sweepHeaders)).json();assert.equal(sweep.skipped,true);
   const readback=await (await call('/api/notifications/sweep','GET',undefined,sweepHeaders)).json();assert.ok(readback.at);assert.equal(readback.sent,1);
+  // Stale reports retain container baselines; fresh data resolves the real issue.
+  await call('/api/notifications','PATCH',{enabled:true,recoveries:true});resetBackoff(id);
+  report.containers[0].health='unhealthy';await deliver();
+  const stillUnhealthy=JSON.parse(objects.get('snapshots/'+id+'.json'));stillUnhealthy.receivedAt='2000-01-01T00:00:00Z';set('snapshots/'+id+'.json',stillUnhealthy);
+  objects.delete('notifications/sweep.json');resetBackoff(id);await call('/api/notifications/sweep','POST',{},sweepHeaders);
+  assert.ok(JSON.parse(objects.get('notifications/hosts/'+id+'.json')).delivered[report.containers[0].id]);
+  objects.delete('notifications/sweep.json');resetBackoff(id);await call('/api/notifications/sweep','POST',{},sweepHeaders);
+  resetBackoff(id);await deliver();
+  let recovery=JSON.parse(requests.at(-1).options.body).message;
+  assert.match(recovery,/Collector reporting resumed/);assert.doesNotMatch(recovery,/Alert: web/,'Unchanged container alert is not repeated after host recovery');
+  const staleAgain=JSON.parse(objects.get('snapshots/'+id+'.json'));staleAgain.receivedAt='2000-01-01T00:00:00Z';set('snapshots/'+id+'.json',staleAgain);
+  objects.delete('notifications/sweep.json');resetBackoff(id);await call('/api/notifications/sweep','POST',{},sweepHeaders);
+  resetBackoff(id);report.containers[0].health='healthy';await deliver();
+  recovery=JSON.parse(requests.at(-1).options.body).message;
+  assert.match(recovery,/Collector reporting resumed/);assert.match(recovery,/Cleared: web/,'Fresh report resolves retained container alert');
   await call('/api/notifications','PATCH',{enabled:false,recoveries:true});const paused=requests.length;report.containers[0].state='dead';await deliver();assert.equal(requests.length,paused);
   invalidAck=true;assert.equal((await call('/api/notifications/test','POST',{})).status,502);assert.equal((await call('/api/notifications/test','POST',{})).status,429);
   objects.delete('notifications/test.json');invalidAck=false;assert.equal((await call('/api/notifications/test','POST',{})).status,200);

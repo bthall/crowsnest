@@ -1,15 +1,12 @@
 import assert from 'node:assert/strict';
 import {readFile,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
+import {testBucket} from './test-storage.mjs';
 const testFile=name=>join(process.env.DOCKER_WATCH_TEST_DIRECTORY||'/tmp',name);
 const source=await readFile('dist/server/index.js','utf8');
 const worker=(await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'))).default;
 const objects=new Map();
-const env={SITE_ORIGIN:'https://board.example',COLLECTOR_SERVICE_TOKEN:'test-service-token',BUCKET:{
- async get(key){const value=objects.get(key);return value===undefined?null:{json:async()=>JSON.parse(value)};},
- async put(key,value){objects.set(key,value);},
- async list({prefix}){return {objects:[...objects.keys()].filter(k=>k.startsWith(prefix)).map(key=>({key})),truncated:false};}
-}};
+const env={SITE_ORIGIN:'https://board.example',COLLECTOR_SERVICE_TOKEN:'test-service-token',BUCKET:testBucket(objects)};
 const viewer={'oai-authenticated-user-id':'owner'};
 const call=(path,options={})=>worker.fetch(new Request(env.SITE_ORIGIN+path,options),env);
 // Canonical browser navigation must preserve privacy and existing API endpoints.
@@ -63,7 +60,7 @@ assert.equal((await call(path,{method:'POST',body:JSON.stringify(payload)})).sta
 assert.equal((await call(path,{method:'POST',headers:{Authorization:'Bearer '+config.hostToken},body:'{}'})).status,400);
 assert.equal((await call(path,{method:'POST',headers:{Authorization:'Bearer '+config.hostToken},body:JSON.stringify(payload)})).status,200);
 const list=await (await call('/api/hosts',{headers:viewer})).json();
-assert.equal(list.hosts.length,2);assert.equal(list.hosts[1].snapshot.containers[0].health,'none');
+assert.equal(list.hosts.length,2);assert.equal(list.hosts.find(h=>h.id===config.hostId).snapshot.containers[0].health,'none');
 assert.ok(!JSON.stringify(list).includes('token'));assert.ok(!JSON.stringify(list).includes('secret must'));
 payload.containers[0].state='forged';
 assert.equal((await call(path,{method:'POST',headers:{Authorization:'Bearer '+config.hostToken},body:JSON.stringify(payload)})).status,400);

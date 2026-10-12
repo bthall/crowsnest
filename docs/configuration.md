@@ -52,7 +52,9 @@ A custom installation path is passed to the setup script as its first argument. 
 - Activity retains up to 100 events per host within 30 days; older entries are hidden and pruned on the next history write.
 - Replacement reporting tokens have a ten-minute activation window. The current token remains valid until replacement activation.
 
-A partial collection is not sent as a successful report. Stale data remains visible and is marked stale.
+The collector inspects up to four containers concurrently and stops starting Docker reads after a 60-second collection budget. Individual socket operations use a timeout of at most ten seconds; this is not a hard wall-clock deadline for a peer that keeps streaming data. Docker responses are bounded to 8 MiB, and ingestion acknowledgements to 8 KiB. Reports retain the dashboard's 128 KiB limit. Collection time counts toward the 30-second reporting cadence; an overrun retries after at least one second.
+
+A container removed between listing and inspection (HTTP 404) is omitted from that report. Other inspection failures prevent submission rather than claiming a successful partial collection. Stale data remains visible and is marked stale. Reporting destinations must be HTTPS origins on the standard port, with no credentials, path, query, or fragment. Redirects are rejected, and success requires the dashboard's JSON acknowledgement.
 
 ## Notifications
 

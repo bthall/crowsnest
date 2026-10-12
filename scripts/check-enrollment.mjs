@@ -2,15 +2,11 @@ import assert from 'node:assert/strict';
 import {readFile,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
+import {testBucket} from './test-storage.mjs';
 const source=await readFile('dist/server/index.js','utf8');
 const worker=(await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'))).default;
 const objects=new Map();
-const env={SITE_ORIGIN:'https://board.example',COLLECTOR_SERVICE_TOKEN:'test-service-token',BUCKET:{
-  async get(key){const value=objects.get(key);return value===undefined?null:{json:async()=>JSON.parse(value)};},
-  async put(key,value){objects.set(key,value);},
-  async delete(key){objects.delete(key);},
-  async list({prefix}){return {objects:[...objects.keys()].filter(key=>key.startsWith(prefix)).map(key=>({key})),truncated:false};},
-}};
+const env={SITE_ORIGIN:'https://board.example',COLLECTOR_SERVICE_TOKEN:'test-service-token',BUCKET:testBucket(objects)};
 const viewer={'oai-authenticated-user-id':'owner',Origin:env.SITE_ORIGIN};
 const call=(path,method='GET',data,headers=viewer)=>worker.fetch(new Request(env.SITE_ORIGIN+path,{method,headers,body:data===undefined?undefined:JSON.stringify(data)}),env);
 // Copied setup and its fallback archive must carry identical private credentials.

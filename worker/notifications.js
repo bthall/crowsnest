@@ -73,14 +73,16 @@ async function notifyHost(env,host,snapshot,settings,now=Date.now()) {
   for(const [id,text] of Object.entries(saved.delivered))if(!current[id])removed.push(id==='report'?(snapshot?'Collector reporting resumed':'Report warning cleared'):text.split(': ')[0]+': no longer in an alert state or no longer reported; check the dashboard');
   // Suppress stale container recovery messages while their host cannot report.
   if(current.report)removed.length=0;
+  // Retain delivered container alerts until a fresh report can resolve them.
+  const baseline=current.report?{...saved.delivered,...current}:current;
   const lines=[...added.map(x=>'Alert: '+x),...(settings.recoveries?removed.map(x=>'Cleared: '+x):[])];
-  if(!lines.length){saved.delivered=current;saved.attempts=0;await env.BUCKET.put(key,JSON.stringify(saved));return {sent:0,pending:0};}
+  if(!lines.length){saved.delivered=baseline;saved.attempts=0;await env.BUCKET.put(key,JSON.stringify(saved));return {sent:0,pending:0};}
   if(saved.nextAttemptAt>now)return {sent:0,pending:1};
   let message=host.name+'\n'+lines.slice(0,10).map(x=>x.slice(0,280)).join('\n')+(lines.length>10?'\n'+(lines.length-10)+' more changes. Open Crowsnest for details.':'');
   while(new TextEncoder().encode(message).length>3500)message=message.slice(0,-1);
   try {
     await publishNtfy(env,destination,message,'Crowsnest · '+host.name,added.length?4:3);
-    saved.delivered=current;saved.attempts=0;saved.nextAttemptAt=now+30000;
+    saved.delivered=baseline;saved.attempts=0;saved.nextAttemptAt=now+30000;
     await env.BUCKET.put(key,JSON.stringify(saved));return {sent:1,pending:0};
   }catch {
     saved.attempts=Math.min((saved.attempts||0)+1,6);

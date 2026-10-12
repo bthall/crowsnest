@@ -21,6 +21,8 @@ For an authenticated server, a topic name is not a password. On a public server,
 
 Messages contain the host name and affected container names/state/health, with a link back to the private dashboard. They do not include logs, environment variables, reporting credentials, or publisher tokens. Exited containers are excluded because scheduled jobs often exit normally. Recoveries for missing containers say to check the dashboard rather than claiming they are healthy. Stale snapshots cannot produce container recovery messages.
 
+Previously delivered container alerts remain in the baseline while a host is stale. A fresh report resolves them or preserves them without repeating the original alert; the collector-report recovery is evaluated separately.
+
 Each host's changes are grouped into a message, limited to ten displayed changes and 3,500 UTF-8 bytes. Unchanged reports do not send repeated alerts. A changed destination starts a new baseline and can send currently active issues. Pausing stops automatic delivery; the explicit test remains available. Re-enabling compares current issues with the last delivered state.
 
 The Worker verifies ntfy's message acknowledgement before recording success. **Accepted by ntfy** does not prove delivery to a phone: subscriptions, mobile permissions, and ntfy push configuration still matter. A failed send preserves the transition for retry, with exponential backoff from 30 seconds up to 15 minutes. New reports and scheduled sweeps drive retries; superseded transitions are coalesced to current state. R2 state is not transactional: overlapping work or lost acknowledgements can duplicate a message. This is best-effort operational notification delivery, without an incident paging SLA.

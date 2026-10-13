@@ -89,7 +89,7 @@ const server = createServer(async (req, res) => {
       const {version} = JSON.parse(await readFile(root + 'package.json', 'utf8'));
       body = body.toString('utf8').replaceAll('__APP_VERSION__', version);
     }
-    if(url.pathname==='/assets/board.js')body=(await readFile(root+'worker/versions.js','utf8'))+'\n'+body.toString('utf8');
+    if(url.pathname==='/assets/board.js')body=(await readFile(root+'worker/versions.js','utf8'))+'\n'+(await readFile(root+'worker/collector-directory.js','utf8'))+'\n'+body.toString('utf8');
     res.setHeader('Content-Type', asset[1]); res.end(body);
   }
   catch {res.writeHead(404); res.end();}

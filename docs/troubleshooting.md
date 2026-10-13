@@ -3,7 +3,7 @@
 Start with the collector logs and container state:
 
 ```bash
-cd /srv/docker/docker-dashboard-collector
+cd /srv/docker/crowsnest-collector
 sudo docker compose ps
 sudo docker compose logs --tail 50 collector socket-proxy
 ```

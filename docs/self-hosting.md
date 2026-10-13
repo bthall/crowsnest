@@ -55,7 +55,7 @@ Configure DNS and certificate issuance for your own environment. Keep TLS verifi
 
 ## Connect hosts
 
-Choose **Connect a host** and follow the four setup steps. Copy the preparation block into a Bash terminal on the Docker host, review the generated files, start the Compose project, and wait for an actual report. The default collector directory remains `/srv/docker/docker-dashboard-collector`, preserving compatibility with existing installations.
+Choose **Connect a host** and follow the four setup steps. Copy the preparation block into a Bash terminal on the Docker host, review the generated files, start the Compose project, and wait for an actual report. New collectors use `/srv/docker/crowsnest-collector`. The maintenance commands also find earlier default installations; see [collector migration](deployment.md#migrate-an-existing-installation) to adopt the Crowsnest deployment names.
 
 Standalone collector configuration contains its dashboard URL, host ID, and individual reporting token. It has no ChatGPT Sites service token. Dashboard and collector credentials are separate; reporting tokens cannot sign in or read the fleet.
 

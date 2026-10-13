@@ -4,7 +4,7 @@
 
 In the private dashboard, choose **Connect a host**, enter a unique name, and choose **Prepare setup**. Choose **Copy setup** and paste it into a Bash terminal on the Docker host as your normal user. Docker Engine and Compose v2 must already be installed. Setup detects whether Docker needs sudo, creates a private directory owned by your user, and writes `compose.yaml`, `collector.py`, `proxy.cfg`, `collector.json`, and `.env`. It validates the Compose configuration without pulling images or starting containers.
 
-When the terminal prints **Private Compose files prepared**, choose **Files prepared — continue**. Review `compose.yaml`, `collector.py`, and `proxy.cfg` in `/srv/docker/docker-dashboard-collector`, then use **Copy start commands** to start the collector. No file transfer is needed. If clipboard access is blocked, the dashboard reveals a selected, read-only setup field for manual copying. Closing setup clears the in-memory command and that field; it cannot clear your operating system clipboard or terminal history.
+When the terminal prints **Private Compose files prepared**, choose **Files prepared — continue**. Review `compose.yaml`, `collector.py`, and `proxy.cfg` in `/srv/docker/crowsnest-collector`, then use **Copy start commands** to start the collector. No file transfer is needed. If clipboard access is blocked, the dashboard reveals a selected, read-only setup field for manual copying. Closing setup clears the in-memory command and that field; it cannot clear your operating system clipboard or terminal history.
 
 Copied setup contains the same private reporting credentials as a downloaded package. Paste it only into the intended host's terminal and keep any shell history containing it private. The dashboard does not create a public credential download URL or put service credentials in a curl command.
 
@@ -17,9 +17,9 @@ Choose **Download and transfer instead** to download `crowsnest-collector.tar` a
 Follow the commands shown in the dashboard as your normal user. The default sequence below assumes the archive is at `~/Downloads/crowsnest-collector.tar` and Docker requires sudo. Change the archive path to its actual location; omit sudo on Docker commands when your user has daemon access.
 
 ```bash
-test ! -e /srv/docker/docker-dashboard-collector &&
-sudo install -d -m 0700 -o "$(id -u)" -g "$(id -g)" /srv/docker/docker-dashboard-collector &&
-cd /srv/docker/docker-dashboard-collector &&
+test ! -e /srv/docker/crowsnest-collector &&
+sudo install -d -m 0700 -o "$(id -u)" -g "$(id -g)" /srv/docker/crowsnest-collector &&
+cd /srv/docker/crowsnest-collector &&
 (umask 077
  tar --keep-old-files -xf ~/Downloads/crowsnest-collector.tar &&
  printf 'COLLECTOR_UID=%s\nCOLLECTOR_GID=%s\n' "$(id -u)" "$(id -g)" > .env) &&
@@ -31,7 +31,7 @@ For a different directory under `/srv/docker`, replace the path consistently in 
 
 Choose **I’ve started the collector** to wait for its first report. Closing the dialog keeps the host registration. Use **Continue setup** to prepare new copied setup and a matching package for an awaiting host. That replacement must activate within ten minutes; otherwise prepare new setup again.
 
-The Compose project is `docker-dashboard`. Containers are `docker-dashboard-collector` and `docker-dashboard-socket-proxy`. The deployment files belong to the installing user, including the invoking user when the installer is run through sudo. The collector runs with that user's UID/GID. The directory is private (0700), and `collector.json` and `.env` are private (0600).
+The Compose project is `crowsnest-collector`. Containers are `crowsnest-collector` and `crowsnest-socket-proxy`. The deployment files belong to the installing user, including the invoking user when the installer is run through sudo. The collector runs with that user's UID/GID. The directory is private (0700), and `collector.json` and `.env` are private (0600).
 
 One collector installation is supported per Docker daemon. The Docker socket defaults to `/var/run/docker.sock`; rootless Docker requires adjusting the socket path and user mapping for the daemon. Do not loosen socket permissions. The socket proxy runs as container root with all capabilities dropped, and permits only selected Docker API reads. No ports are published.
 
@@ -40,7 +40,7 @@ The older script format remains supported by the registration API for compatibil
 ## Verify and maintain
 
 ```bash
-cd /srv/docker/docker-dashboard-collector
+cd /srv/docker/crowsnest-collector
 sudo docker compose logs -f collector
 ```
 
@@ -68,6 +68,38 @@ This flow rotates the per-host reporting token. The platform service credential 
 Select the host, then **Manage host → Update collector → Prepare update command**. Copy the command into Bash on that host as the user who owns its installation. It replaces `collector.py` and `proxy.cfg` using temporary files, validates the existing Compose configuration, and recreates both collector services. Resource reporting requires the updated restricted proxy, which permits bounded, read-only stats requests. It does not replace `collector.json`, rotate tokens, change `.env`, or overwrite `compose.yaml`. Docker uses sudo if the user cannot access the daemon directly.
 
 For a different path, run `export CROWSNEST_COLLECTOR_DIR='/srv/docker/your-directory'` before the copied block. Missing configuration or a symlink in place of either updated file stops the update. Manage host shows the reported collector version, report time, and the version bundled with the dashboard. After running the command, watch for `Status delivered` in collector logs; the UI confirms the target version only when a fresh report arrives. Existing collectors remain compatible; older collectors show **version unknown** until updated. The bundled update is disabled when a host reports a newer version, to avoid an unintended downgrade. Compose grouping requires the updated collector; missing metadata is labeled explicitly in the table.
+
+Update and credential replacement commands choose the Crowsnest directory when it exists, otherwise the earlier default directory. If both exist, export `CROWSNEST_COLLECTOR_DIR` to choose one. New setup refuses to create a second collector when either generation's container names already exist.
+
+## Migrate an existing installation
+
+The earlier default used `/srv/docker/docker-dashboard-collector`, project `docker-dashboard`, and containers `docker-dashboard-collector` / `docker-dashboard-socket-proxy`. Updating its code preserves the existing Compose file. To adopt Crowsnest names, first update through **Manage host**, then run this in Bash as the installation owner. It briefly stops the two collector services, moves their directory, and updates only the default Compose names. Reporting credentials, `.env`, and the host registration stay in place.
+
+The example assumes the unchanged earlier Compose template and direct Docker access. Use `sudo docker` on its Docker commands if required. For a custom path or modified Compose file, apply the same directory/project/container changes to your actual installation instead.
+
+```bash
+set -eu
+cd /srv/docker/docker-dashboard-collector
+test -O .
+test ! -e /srv/docker/crowsnest-collector
+umask 077
+cp -p compose.yaml compose.before-crowsnest.yaml
+chmod 0600 compose.before-crowsnest.yaml
+docker compose config --quiet
+docker compose down
+sed -i \
+  -e 's/^name: docker-dashboard$/name: crowsnest-collector/' \
+  -e 's/container_name: docker-dashboard-/container_name: crowsnest-/' \
+  compose.yaml
+docker compose config --quiet
+cd /srv/docker
+sudo mv -- docker-dashboard-collector crowsnest-collector
+cd /srv/docker/crowsnest-collector
+docker compose up -d
+docker compose logs --tail=30 collector
+```
+
+Keep the previous Compose file until fresh reports confirm the migration. If startup fails, run `docker compose down`, restore `compose.before-crowsnest.yaml` as `compose.yaml`, and start that previous configuration from the same directory. The old project/container names work with either directory location. No host re-enrollment is needed.
 
 ## Pause notifications during maintenance
 

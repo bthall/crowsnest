@@ -14,7 +14,7 @@ const oldFetch=globalThis.fetch;
 globalThis.fetch=async(url,options)=>{requests.push(JSON.parse(options.body));return new Response(JSON.stringify({id:'test-message',event:'message',topic:'fleet'}));};
 try {
   const setup=await (await call('/api/hosts','POST',{name:'maintenance-host',format:'setup'})).json();
-  const config=JSON.parse(setup.setupCommand.match(/cat > collector.json <<'DOCKER_WATCH_FILE_EOF'\n([\s\S]*?)\nDOCKER_WATCH_FILE_EOF/)[1]);
+  const config=JSON.parse(setup.setupCommand.match(/cat > collector.json <<'CROWSNEST_FILE_EOF'\n([\s\S]*?)\nCROWSNEST_FILE_EOF/)[1]);
   const id=config.hostId, path='/api/hosts/'+id, auth={Authorization:'Bearer '+config.hostToken};
   const report={engineVersion:'29',containers:[{id:'a'.repeat(64),name:'web',image:'nginx',state:'running',health:'healthy',restarts:0,startedAt:'',finishedAt:''}]};
   const deliver=()=>call('/api/ingest/'+id,'POST',report,auth);
@@ -50,7 +50,16 @@ try {
   const beforeUpdate=objects.get('hosts/'+id+'.json');
   const update=await (await call(path+'/collector','POST',{format:'update'})).json();
   assert.equal(objects.get('hosts/'+id+'.json'),beforeUpdate);assert.ok(!update.updateCommand.includes(config.hostToken)&&!update.updateCommand.includes(env.COLLECTOR_SERVICE_TOKEN));
-  const root=process.env.DOCKER_WATCH_TEST_DIRECTORY, dir=join(root,'update installation'), bin=join(root,'update-bin');await mkdir(dir);await mkdir(bin);
+  const root=process.env.CROWSNEST_TEST_DIRECTORY, dir=join(root,'update installation'), bin=join(root,'update-bin');await mkdir(dir);await mkdir(bin);
+  const {collectorDirectoryCommands}=await import('data:text/javascript;base64,'+Buffer.from((await readFile('worker/collector-directory.js','utf8'))+'\nexport {collectorDirectoryCommands};').toString('base64'));
+  const current=join(root,"current collector's files"), legacy=join(root,'legacy collector');
+  const directoryProbe=extra=>spawnSync('bash',['-eu'],{input:collectorDirectoryCommands(current,legacy).join('\n')+'\npwd\n',env:{...process.env,CROWSNEST_COLLECTOR_DIR:'',...extra},encoding:'utf8'});
+  assert.notEqual(directoryProbe().status,0);
+  await mkdir(legacy);assert.equal(directoryProbe().stdout.trim(),legacy);
+  await mkdir(current);assert.notEqual(directoryProbe().status,0);
+  assert.equal(directoryProbe({CROWSNEST_COLLECTOR_DIR:legacy}).stdout.trim(),legacy);
+  const {rmdir}=await import('node:fs/promises');await rmdir(legacy);
+  assert.equal(directoryProbe().stdout.trim(),current);
   await writeFile(join(dir,'collector.json'),'private fixture',{mode:0o600});await writeFile(join(dir,'compose.yaml'),'existing compose');await writeFile(join(dir,'collector.py'),'old code');await writeFile(join(dir,'.env'),'existing user');
   await writeFile(join(bin,'docker'),'#!/bin/sh\nprintf "%s\\n" "$*" >> "$UPDATE_CALLS"\n',{mode:0o755});
   const calls=join(root,'update-calls'), execute=()=>spawnSync('bash',[],{input:update.updateCommand,env:{...process.env,PATH:bin+':'+process.env.PATH,CROWSNEST_COLLECTOR_DIR:dir,UPDATE_CALLS:calls},encoding:'utf8'});

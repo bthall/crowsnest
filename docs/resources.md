@@ -2,6 +2,8 @@
 
 Collector v0.9.0 adds optional CPU and memory measurements for running containers. Use **Manage host → Update collector** to replace both `collector.py` and `proxy.cfg` on older installations. Credentials, Compose configuration, and user ownership stay in place. Status-only collectors remain compatible.
 
+Use collector **v0.10.0 or later**: it fixes one-shot stats compatibility on engines that omit the response's container ID. The collector requests the full container ID and checks it when supplied. Docker's [one-shot implementation](https://github.com/moby/moby/blob/v26.1.4/daemon/stats.go) returns raw counters without adding the ID used by its streaming path.
+
 ## Reading the values
 
 Select a host and expand **Container resources** for its current workload, 24-hour charts, and the same readings as a table. Choose a container name for individual CPU, memory, and memory-limit details.

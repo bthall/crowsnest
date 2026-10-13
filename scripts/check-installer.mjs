@@ -3,13 +3,16 @@ import {chmodSync,mkdtempSync,mkdirSync,readFileSync,rmSync,statSync,writeFileSy
 import {spawnSync} from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
-const root=mkdtempSync(path.join(os.tmpdir(),'docker-watch-install-test-'));
+const root=mkdtempSync(path.join(os.tmpdir(),'crowsnest-install-test-'));
 const bin=path.join(root,'bin'), calls=path.join(root,'calls');
 mkdirSync(bin);
 writeFileSync(path.join(bin,'docker'),`#!/usr/bin/env bash
 set -eu
 printf '%s\\n' "$*" >> "$TEST_DOCKER_CALLS"
-if [[ "$*" == 'container inspect '* ]]; then exit 1; fi
+if [[ "$*" == 'container inspect '* ]]; then
+  if [[ "\${TEST_EXISTING_CONTAINER:-}" == "\${3:-}" ]]; then exit 0; fi
+  exit 1
+fi
 if [[ "$*" == 'info' && "\${TEST_DOCKER_DENIED:-}" == 1 && "\${TEST_USING_SUDO:-}" != 1 ]]; then exit 1; fi
 if [[ "$*" == 'compose up -d' && "\${TEST_STARTUP_FAILURE:-}" == 1 ]]; then exit 1; fi
 `);
@@ -22,9 +25,9 @@ for(const name of ['docker','sudo'])chmodSync(path.join(bin,name),0o755);
 const env={...process.env,PATH:bin+':'+process.env.PATH,TEST_DOCKER_CALLS:calls};
 const run=(script,args=[],extra={})=>spawnSync('bash',[script,...args],{cwd:root,env:{...env,...extra},encoding:'utf8'});
 try {
-  const script=path.join(process.env.DOCKER_WATCH_TEST_DIRECTORY||'/tmp','docker-watch-test-setup.sh');
+  const script=path.join(process.env.CROWSNEST_TEST_DIRECTORY||'/tmp','crowsnest-test-setup.sh');
   for(const file of [script])assert.equal(spawnSync('bash',['-n',file]).status,0);
-  assert.match(readFileSync(script,'utf8'),/\/srv\/docker\/docker-dashboard-collector/);
+  assert.match(readFileSync(script,'utf8'),/\/srv\/docker\/crowsnest-collector/);
   const target=path.join(root,'new-install');
   const result=run(script,[target]);assert.equal(result.status,0,result.stderr);
   assert.equal(statSync(target).mode&0o777,0o700);
@@ -32,13 +35,13 @@ try {
   assert.equal(statSync(path.join(target,'.env')).mode&0o777,0o600);
   assert.equal(statSync(path.join(target,'proxy.cfg')).mode&0o777,0o644);
   const compose=readFileSync(path.join(target,'compose.yaml'),'utf8');
-  assert.match(compose,/name: docker-dashboard\n/);
-  assert.match(compose,/container_name: docker-dashboard-collector/);
-  assert.match(compose,/container_name: docker-dashboard-socket-proxy/);
+  assert.match(compose,/name: crowsnest-collector\n/);
+  assert.match(compose,/container_name: crowsnest-collector/);
+  assert.match(compose,/container_name: crowsnest-socket-proxy/);
   assert.match(compose,/user: "\$\{COLLECTOR_UID/);
   const originalConfig=readFileSync(path.join(target,'collector.json'),'utf8');
   // Execute the actual clipboard wrapper. Preparation must never pull or start containers.
-  const clipboard=readFileSync(path.join(process.env.DOCKER_WATCH_TEST_DIRECTORY||'/tmp','crowsnest-test-copy-setup.sh'),'utf8');
+  const clipboard=readFileSync(path.join(process.env.CROWSNEST_TEST_DIRECTORY||'/tmp','crowsnest-test-copy-setup.sh'),'utf8');
   const prepared=path.join(root,'copied setup');
   const copyInput=clipboard.replace("bash <<'CROWSNEST_SETUP'",`bash -s -- '${prepared}' <<'CROWSNEST_SETUP'`);
   writeFileSync(calls,'');
@@ -54,6 +57,11 @@ try {
   assert.notEqual(spawnSync('bash',[],{input:copyInput,cwd:root,env,encoding:'utf8'}).status,0);
   assert.equal(readFileSync(path.join(prepared,'collector.json'),'utf8'),preparedConfig);
   assert.notEqual(run(script,[target]).status,0);
+  for(const container of ['crowsnest-collector','docker-dashboard-collector']) {
+    const refused=path.join(root,'existing-'+container);
+    assert.notEqual(run(script,[refused],{TEST_EXISTING_CONTAINER:container}).status,0);
+    assert.match(readFileSync(calls,'utf8'),new RegExp('container inspect '+container));
+  }
   assert.equal(readFileSync(path.join(target,'collector.json'),'utf8'),originalConfig);
   const failed=path.join(root,'failed');
   const failure=run(script,[failed],{TEST_STARTUP_FAILURE:'1'});

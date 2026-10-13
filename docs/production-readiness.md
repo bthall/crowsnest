@@ -14,7 +14,7 @@ The objective is a polished fleet monitor that an operator can deploy without a 
 | UI polish | Desktop/mobile browser verification, keyboard and accessibility checks, updated fictional screenshots |
 | Distribution | Selected license, release instructions, reproducible image build, dependency/image/security CI |
 
-This is a delivery record, not a claim that every gate has passed. Record the version and verification evidence when each increment ships. The owner selected MIT; public repository visibility remains an owner decision.
+This is a delivery record, not a claim that every gate has passed. Record the version and verification evidence when each increment ships. The owner selected MIT and approved public source/image distribution; GitHub visibility changes require the owner's administration access.
 
 ## Comparable tools
 
@@ -28,7 +28,7 @@ Add a standalone Node runtime using the same dashboard/API and SQLite storage. K
 
 - License: MIT, confirmed by the owner.
 - Account scope: one owner per instance, confirmed by the owner.
-- Public repository and container registry publication: verify available permissions before claiming distribution.
+- Public repository and container registry publication: approved by the owner; verify actual visibility before claiming anonymous distribution.
 
 ## v0.8.0 local evidence
 
@@ -49,3 +49,9 @@ Add a standalone Node runtime using the same dashboard/API and SQLite storage. K
 - Security: the dependency audit, six application security rules, and custom source/history scanner passed; Gitleaks found no secrets in full history or the working tree. The tested local image passed the pinned fixable high/critical Trivy gate. This gate does not certify lower-severity or unfixed vulnerabilities.
 
 GitHub release publication requires successful Checks and Security on the same commit, followed by runtime tests and image scans for both amd64 and arm64. The release record carries that separate CI evidence; local checks above do not claim an unpublished release exists. Repository and registry visibility remain controlled by the owner.
+
+## v0.10.0 compatibility verification
+
+Poseidon's Docker Engine 26.1.4 omits the ID from one-shot stats responses. The collector now permits that omission because its request uses the full container ID; supplied mismatches remain rejected. A regression exercises warm-up, complete CPU/memory reports, privacy, and invalid supplied IDs. Live read-only verification through the updated restricted proxy measured memory for all six running containers on the first read and CPU/memory for all six on the second. Normal reporting acknowledgements continued, with credentials, file modes, and installing-user ownership preserved.
+
+Poseidon was migrated to `/srv/docker/crowsnest-collector`, project `crowsnest-collector`, and containers `crowsnest-collector` / `crowsnest-socket-proxy`. Both services ran without restarts and delivered reports after migration. Installer checks reject existing collectors under either naming scheme; maintenance checks cover current, legacy, ambiguous, and explicit custom directories. Current enrollment and fleet captures use v0.10.0, with fictional data and embedded provenance. Desktop, mobile, and narrow enrollment/update checks found no horizontal overflow, page errors, or Axe A/AA violations; the fresh finish review returned `ship`.

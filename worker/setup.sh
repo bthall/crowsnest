@@ -2,10 +2,10 @@
 set -euo pipefail
 umask 077
 if [[ $# -gt 1 ]]; then
-    echo 'Usage: bash docker-watch-setup.sh [TARGET_DIRECTORY]' >&2
+    echo 'Usage: bash crowsnest-setup.sh [TARGET_DIRECTORY]' >&2
     exit 1
 fi
-target="${1:-/srv/docker/docker-dashboard-collector}"
+target="${1:-/srv/docker/crowsnest-collector}"
 [[ "$target" == /* ]] || target="$PWD/$target"
 if [[ -e "$target" || -L "$target" ]]; then
     echo "Directory already exists; refusing to overwrite: $target" >&2
@@ -31,7 +31,8 @@ if ! "${DOCKER[@]}" info >/dev/null 2>&1; then
     fi
 fi
 "${DOCKER[@]}" compose version >/dev/null
-for container in docker-dashboard-collector docker-dashboard-socket-proxy; do
+# Also protect installations created before the Crowsnest deployment names.
+for container in crowsnest-collector crowsnest-socket-proxy docker-dashboard-collector docker-dashboard-socket-proxy; do
     if "${DOCKER[@]}" container inspect "$container" >/dev/null 2>&1; then
         echo "Container already exists: $container. Inspect the existing installation before continuing." >&2
         exit 1
@@ -74,7 +75,7 @@ if ! "${DOCKER[@]}" compose up -d; then
     exit 1
 fi
 printf '\nCollector installed at %s\n' "$target"
-printf 'Container names: docker-dashboard-collector, docker-dashboard-socket-proxy\n'
+printf 'Container names: crowsnest-collector, crowsnest-socket-proxy\n'
 printf 'Check reports with: cd %q && ' "$target"
 printf '%q ' "${DOCKER[@]}"
 printf 'compose logs -f collector\n'

@@ -25,6 +25,7 @@ try {
   check('labels.js',"const title = recovery ? 'Reset your password' : 'Welcome back';",false);
   check('settings.json',JSON.stringify({serviceToken:'example-token'}),false);
   check('collector.json','{}',true);
+  check('crowsnest-setup.sh','# generated installer',true);
   check('.env','DEMO=example',true);
   console.log('Passed: secret scanner rejects quoted JSON/Python credentials and generated files, permits declared examples, and redacts values.');
 }finally{rmSync(root,{recursive:true,force:true});}

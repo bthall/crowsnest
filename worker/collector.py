@@ -27,7 +27,9 @@ def nonnegative_int(value):
 
 def resource_values(data, container, sampled_at):
     """Docker workload measurements only; never copy raw stats into a report."""
-    if not isinstance(data, dict) or data.get('id') != container['id']:
+    # Docker's one-shot path can omit ID; the request already binds the full ID.
+    # Reject an inconsistent ID whenever the daemon does supply one.
+    if not isinstance(data, dict) or ('id' in data and data['id'] != container['id']):
         raise ValueError('Resource ID mismatch')
     cpu = data.get('cpu_stats') or {}
     total = (cpu.get('cpu_usage') or {}).get('total_usage')

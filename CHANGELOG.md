@@ -3,6 +3,17 @@
 Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 
+## [0.10.0] - 2026-10-13
+
+### Changed
+
+- New collector installations use `/srv/docker/crowsnest-collector`, the `crowsnest-collector` Compose project, and `crowsnest-collector` / `crowsnest-socket-proxy` containers. Setup downloads, copy commands, documentation, and internal test names consistently use Crowsnest.
+- Existing collectors remain supported. Update and credential replacement commands find either standard directory or use `CROWSNEST_COLLECTOR_DIR`; simultaneous standard installations require an explicit choice. Existing Compose customization is preserved. The deployment guide covers optional migration to the new names.
+
+### Fixed
+
+- Resource sampling accepts Docker one-shot responses that omit their container ID. Requests remain bound to a full container ID, and a supplied mismatched ID is still rejected. Status-only reporting remains compatible.
+
 ## [0.9.0] - 2026-10-13
 
 ### Added

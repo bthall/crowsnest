@@ -255,6 +255,26 @@ class CollectorChecks(unittest.TestCase):
             self.assertEqual(collector.collect_resources('/v1.50', '1.50', [c], time.monotonic() - 1), 'unavailable')
             get.assert_not_called()
 
+    def test_one_shot_stats_without_id(self):
+        # Docker Engine 26's one-shot branch returns counters without name/ID.
+        self.stats.pop('id')
+        sink = Sink()
+        self.report(sink)
+        self.stats['cpu_stats']['cpu_usage']['total_usage'] += 100
+        self.stats['cpu_stats']['system_cpu_usage'] += 1000
+        self.report(sink)
+        first, second = [json.loads(r.data) for r in sink.requests]
+        self.assertEqual(first['resourceSampling'], 'warming')
+        self.assertEqual(second['resourceSampling'], 'complete')
+        self.assertEqual(second['containers'][0]['resources']['cpuPercent'], 40)
+        self.assertEqual(second['containers'][0]['resources']['memoryBytes'], 800)
+        self.assertNotIn('must-not-collect', json.dumps(second))
+        c = {'id': 'a' * 64, 'startedAt': ''}
+        for supplied_id in [None, True, '', 'b' * 64]:
+            with self.subTest(id=supplied_id), self.assertRaises(ValueError):
+                collector.resource_values({**self.stats, 'id': supplied_id}, c, 100)
+        self.assertEqual(collector.resource_values({**self.stats, 'id': c['id']}, c, 100)['memoryBytes'], 800)
+
     def test_report_drops_optional_metrics_to_fit_limit(self):
         payload = {'engineVersion': '29', 'resourceSampling': 'complete', 'containers': [
             {'id': 'a' * 64, 'resources': {'extra': 'x' * collector.MAX_REPORT_BYTES}}]}

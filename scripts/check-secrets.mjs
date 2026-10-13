@@ -2,7 +2,7 @@ import {readFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 
 const git=(args,input)=>execFileSync('git',args,{input,maxBuffer:32*1024*1024});
-const forbiddenFile=/(?:^|\/)(?:\.env(?:\..+)?|notifier\.json|collector[^/]*\.json|crowsnest-collector[^/]*\.tar|docker-watch-[^/]*\.sh|id_(?:rsa|ecdsa|ed25519))$|\.(?:pem|key|p12|pfx|jks)$/i;
+const forbiddenFile=/(?:^|\/)(?:\.env(?:\..+)?|notifier\.json|collector[^/]*\.json|crowsnest-collector[^/]*\.tar|crowsnest-setup[^/]*\.sh|docker-watch-[^/]*\.sh|id_(?:rsa|ecdsa|ed25519))$|\.(?:pem|key|p12|pfx|jks)$/i;
 const patterns=[
   /-----BEGIN (?:RSA |EC |OPENSSH |DSA |ENCRYPTED )?PRIVATE KEY-----/,
   /\bgh[pousr]_[A-Za-z0-9]{20,}\b/,

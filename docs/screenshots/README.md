@@ -1,6 +1,6 @@
 # Screenshot provenance
 
-The overview, container-details, and resource-history README images are browser captures of Crowsnest `0.9.0`, refreshed on 2026-10-13. The unchanged enrollment image remains from `0.7.1`.
+The overview, container-details, and resource-history README images are browser captures of Crowsnest `0.10.0`, refreshed on 2026-10-13. The enrollment capture also uses `0.10.0` and its Crowsnest directory names.
 All hosts, container names, images, counts, and report ages are fictional examples from `scripts/preview.mjs`. The captures contain no production fleet data, account details, URLs with credentials, or downloaded setup scripts.
 
 - Container details: Chromium, 1440 × 1000 viewport, full page, showing a fictional unhealthy container, resource measurements, and retained changes.
@@ -8,8 +8,8 @@ All hosts, container names, images, counts, and report ages are fictional exampl
 - Mobile layout: Chromium, 390 × 844 viewport, full page.
 - Desktop and mobile captures show host groups; one fictional host is in timed maintenance.
 - Resource history: Chromium, 1440 × 1000 and 390 × 844 viewports, full page, with fictional running-container totals and 24-hour readings that deliberately contain gaps.
-- Host setup: Chromium, 1440 × 1120 viewport, dialog capture. Enrollment uses a synthetic API response and test credentials; the capture shows no credential values.
-- Enrollment captured on 2026-10-12; the refreshed captures are from 2026-10-13 (America/New_York).
+- Host setup: Chromium, 1440 × 1000 viewport, dialog capture. Enrollment uses synthetic registration and host-list API responses; the capture shows no credential values.
+- These six refreshed captures are from 2026-10-13 (America/New_York).
 
 Run `npm run preview`, then use the Codex Playwright skill or a local browser to capture the page at these widths. Save overview captures as `dashboard-desktop.png` and `dashboard-mobile.png`; choose a container name for `container-details-desktop.png`, preserving the full interface. Do not use image generation to fabricate interface details.
 

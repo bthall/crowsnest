@@ -10,7 +10,7 @@ const env={SITE_ORIGIN:'https://board.example.com',COLLECTOR_SERVICE_TOKEN:'test
 const viewer={'oai-authenticated-user-id':'owner',Origin:env.SITE_ORIGIN};
 const call=(path,method='GET',data,headers=viewer)=>worker.fetch(new Request(env.SITE_ORIGIN+path,{method,headers,body:data===undefined?undefined:JSON.stringify(data)}),env);
 const setup=await (await call('/api/hosts','POST',{name:'lighthouse',format:'setup'})).json();
-const config=JSON.parse(setup.setupCommand.match(/cat > collector.json <<'DOCKER_WATCH_FILE_EOF'\n([\s\S]*?)\nDOCKER_WATCH_FILE_EOF/)[1]);
+const config=JSON.parse(setup.setupCommand.match(/cat > collector.json <<'CROWSNEST_FILE_EOF'\n([\s\S]*?)\nCROWSNEST_FILE_EOF/)[1]);
 const id=config.hostId, auth={Authorization:'Bearer '+config.hostToken}, path='/api/resources?host='+id;
 const c={id:'a'.repeat(64),name:'web',image:'nginx',state:'running',health:'healthy',restarts:0,startedAt:'',finishedAt:''};
 const report={engineVersion:'29',containers:[c]};

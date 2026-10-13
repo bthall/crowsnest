@@ -11,7 +11,7 @@ const register=async name=>{
   const response=await call('/api/hosts','POST',{name,format:'setup'});
   assert.equal(response.status,200,'Registration must handle partial R2 pages');
   const data=await response.json();
-  return JSON.parse(data.setupCommand.match(/cat > collector.json <<'DOCKER_WATCH_FILE_EOF'\n([\s\S]*?)\nDOCKER_WATCH_FILE_EOF/)[1]);
+  return JSON.parse(data.setupCommand.match(/cat > collector.json <<'CROWSNEST_FILE_EOF'\n([\s\S]*?)\nCROWSNEST_FILE_EOF/)[1]);
 };
 const config=await register('lighthouse');
 const hostCount=objects.size;

@@ -28,6 +28,7 @@ const files = [
   'worker/index.js', 'worker/board.html', 'worker/board.js', 'worker/board.css',
   'worker/notifications.js',
   'worker/resources.js',
+  'worker/collector-directory.js',
   'worker/versions.js',
   'worker/collector.py', 'worker/proxy.cfg', 'worker/compose.yaml', 'worker/setup.sh',
   'worker/assets/crowsnest-mark.png', 'worker/assets/README.md',

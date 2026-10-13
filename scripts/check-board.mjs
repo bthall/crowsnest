@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {testBucket} from './test-storage.mjs';
-const testFile=name=>join(process.env.DOCKER_WATCH_TEST_DIRECTORY||'/tmp',name);
+const testFile=name=>join(process.env.CROWSNEST_TEST_DIRECTORY||'/tmp',name);
 const source=await readFile('dist/server/index.js','utf8');
 const worker=(await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'))).default;
 const objects=new Map();
@@ -52,8 +52,8 @@ const host=JSON.parse([...objects.values()][0]);
 assert.equal(host.name,'hedwig');assert.equal(host.tokenHash.length,64);assert.equal(host.hostToken,undefined);
 // A second host creates the installer used to validate its embedded collector and credentials.
 const result=await call('/api/hosts',{method:'POST',headers:{...viewer,Origin:env.SITE_ORIGIN},body:JSON.stringify({name:'second'})});
-const installer=await result.text();await writeFile(testFile('docker-watch-test-setup.sh'),installer);
-const config=JSON.parse(installer.split("cat > collector.json <<'DOCKER_WATCH_FILE_EOF'\n")[1].split('\nDOCKER_WATCH_FILE_EOF')[0]);
+const installer=await result.text();await writeFile(testFile('crowsnest-test-setup.sh'),installer);
+const config=JSON.parse(installer.split("cat > collector.json <<'CROWSNEST_FILE_EOF'\n")[1].split('\nCROWSNEST_FILE_EOF')[0]);
 const path='/api/ingest/'+config.hostId;
 const payload={engineVersion:'29.0',containers:[{id:'a'.repeat(64),name:'web',image:'nginx:alpine',state:'running',health:'none',restarts:0,startedAt:'2026-09-29T10:00:00Z',finishedAt:'',environment:'secret must never be persisted'}]};
 assert.equal((await call(path,{method:'POST',body:JSON.stringify(payload)})).status,403);
@@ -79,9 +79,9 @@ for(const origin of [env.SITE_ORIGIN,customOrigin]) {
 }
 const customResult=await registerAt(customOrigin,{...viewer,Origin:customOrigin},'custom-domain-host');
 assert.equal(customResult.status,200);
-assert.match(customResult.headers.get('Content-Disposition'),/docker-watch-setup\.sh/);
+assert.match(customResult.headers.get('Content-Disposition'),/crowsnest-setup\.sh/);
 const customInstaller=await customResult.text();
-const customConfig=JSON.parse(customInstaller.split("cat > collector.json <<'DOCKER_WATCH_FILE_EOF'\n")[1].split('\nDOCKER_WATCH_FILE_EOF')[0]);
+const customConfig=JSON.parse(customInstaller.split("cat > collector.json <<'CROWSNEST_FILE_EOF'\n")[1].split('\nCROWSNEST_FILE_EOF')[0]);
 assert.equal(customConfig.url,env.SITE_ORIGIN);
 assert.equal(customConfig.serviceToken,env.COLLECTOR_SERVICE_TOKEN);
 assert.equal((await call('/api/ingest/'+customConfig.hostId,{method:'POST',headers:{Authorization:'Bearer '+customConfig.hostToken},body:JSON.stringify({...payload,containers:[]})})).status,200);

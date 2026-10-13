@@ -16,11 +16,11 @@ assert.equal(setupResponse.status,200);assert.equal(setupResponse.headers.get('C
 const setup=await setupResponse.json();
 assert.match(setup.setupCommand,/^bash <<'CROWSNEST_SETUP'\nexport CROWSNEST_PREPARE_ONLY=1\n/);
 assert.match(setup.setupCommand,/\nCROWSNEST_SETUP\n$/);
-await writeFile(join(process.env.DOCKER_WATCH_TEST_DIRECTORY||'/tmp','crowsnest-test-copy-setup.sh'),setup.setupCommand);
+await writeFile(join(process.env.CROWSNEST_TEST_DIRECTORY||'/tmp','crowsnest-test-copy-setup.sh'),setup.setupCommand);
 assert.equal(spawnSync('bash',['-n'],{input:setup.setupCommand}).status,0);
-const copiedConfig=JSON.parse(setup.setupCommand.match(/cat > collector.json <<'DOCKER_WATCH_FILE_EOF'\n([\s\S]*?)\nDOCKER_WATCH_FILE_EOF/)[1]);
+const copiedConfig=JSON.parse(setup.setupCommand.match(/cat > collector.json <<'CROWSNEST_FILE_EOF'\n([\s\S]*?)\nCROWSNEST_FILE_EOF/)[1]);
 assert.equal(copiedConfig.hostId,setup.hostId);
-const copyArchive=join(process.env.DOCKER_WATCH_TEST_DIRECTORY||'/tmp','crowsnest-test-copy.tar');
+const copyArchive=join(process.env.CROWSNEST_TEST_DIRECTORY||'/tmp','crowsnest-test-copy.tar');
 await writeFile(copyArchive,Buffer.from(setup.packageBase64,'base64'));
 const copyParsed=spawnSync('python3',['-c',"import tarfile,sys\nwith tarfile.open(sys.argv[1]) as t: print(t.extractfile('collector.json').read().decode())",copyArchive],{encoding:'utf8'});
 assert.equal(copyParsed.status,0,copyParsed.stderr);assert.deepEqual(JSON.parse(copyParsed.stdout),copiedConfig);
@@ -28,7 +28,7 @@ const copyReport={engineVersion:'29.0',containers:[]};
 const copyIngest='/api/ingest/'+setup.hostId;
 assert.equal((await call(copyIngest,'POST',copyReport,{Authorization:'Bearer '+copiedConfig.hostToken})).status,200);
 const resumedSetup=await (await call('/api/hosts/'+setup.hostId+'/collector','POST',{format:'setup'})).json();
-const resumedConfig=JSON.parse(resumedSetup.setupCommand.match(/cat > collector.json <<'DOCKER_WATCH_FILE_EOF'\n([\s\S]*?)\nDOCKER_WATCH_FILE_EOF/)[1]);
+const resumedConfig=JSON.parse(resumedSetup.setupCommand.match(/cat > collector.json <<'CROWSNEST_FILE_EOF'\n([\s\S]*?)\nCROWSNEST_FILE_EOF/)[1]);
 assert.notEqual(resumedConfig.hostToken,copiedConfig.hostToken);
 assert.equal((await call(copyIngest,'POST',copyReport,{Authorization:'Bearer '+copiedConfig.hostToken})).status,200);
 assert.equal((await call(copyIngest,'POST',copyReport,{Authorization:'Bearer '+resumedConfig.hostToken})).status,200);
@@ -37,7 +37,7 @@ const created=await call('/api/hosts','POST',{name:'compose-host',format:'compos
 assert.equal(created.status,200);
 assert.equal(created.headers.get('Content-Type'),'application/x-tar');
 const id=created.headers.get('X-Crowsnest-Host-Id');assert.match(id,/^[a-f0-9-]{36}$/);
-const archive=join(process.env.DOCKER_WATCH_TEST_DIRECTORY||'/tmp','crowsnest-test-collector.tar');
+const archive=join(process.env.CROWSNEST_TEST_DIRECTORY||'/tmp','crowsnest-test-collector.tar');
 await writeFile(archive,new Uint8Array(await created.arrayBuffer()));
 const parsed=spawnSync('python3',['-c',`import tarfile,json,sys
 with tarfile.open(sys.argv[1]) as archive:

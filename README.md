@@ -79,12 +79,12 @@ To connect a host, you need a private Crowsnest dashboard, a Linux host with Doc
 5. Review the files and run the displayed start commands as your normal user. Choose whether Docker commands need sudo.
 6. Choose **I’ve started the collector** and wait for an actual report to confirm connection.
 
-The default directory is `/srv/docker/docker-dashboard-collector`. Setup creates a private directory owned by your user and refuses to overwrite an existing installation. **Download and transfer instead** remains available as an alternative.
+The default directory is `/srv/docker/crowsnest-collector`. Setup creates a private directory owned by your user and refuses to overwrite an existing installation. **Download and transfer instead** remains available as an alternative.
 
 Check the collector:
 
 ```bash
-cd /srv/docker/docker-dashboard-collector
+cd /srv/docker/crowsnest-collector
 sudo docker compose logs -f collector
 ```
 
@@ -136,7 +136,7 @@ See [development and validation](docs/development.md) for build output, test cov
 | [Collector installation](docs/deployment.md) | New hosts, custom paths, updates, and maintenance |
 | [Container details](docs/container-details.md) | Container facts, recent changes, freshness, and collector versions |
 | [ChatGPT Sites setup](docs/chatgpt-sites.md) | Separate private deployments and distribution readiness |
-| [Roadmap](docs/roadmap.md) | Resource usage candidates |
+| [Roadmap](docs/roadmap.md) | Future monitoring features |
 | [Versioning](docs/versioning.md) | Compatibility, changelog, and release procedure |
 | [Configuration](docs/configuration.md) | Runtime bindings, collector configuration, paths, and limits |
 | [Architecture](docs/architecture.md) | Data flow, access control, and hosting |
@@ -149,11 +149,11 @@ See [development and validation](docs/development.md) for build output, test cov
 
 ## Compatibility and limitations
 
-The product name is Crowsnest. Existing collector filenames, the `docker-dashboard` Compose project, container names, paths, and API routes remain compatible with existing installations.
+New installations use the Crowsnest directory, Compose project, and container names. Existing collectors remain accepted; update and credential replacement commands also locate earlier default installations. See [migration guidance](docs/deployment.md#migrate-an-existing-installation) to adopt the new names without rotating credentials.
 
 This version supports one collector installation per Docker daemon and up to 100 registered hosts. A host report supports up to 250 containers and 128 KiB. Rootless Docker requires manual socket-path and user-mapping adjustments. Host management replaces reporting credentials; changing the platform service credential still requires updating every collector.
 
-The current product version is **0.9.0**. See the [changelog](CHANGELOG.md), [project review](docs/code-review.md), and [versioning policy](docs/versioning.md).
+The current product version is **0.10.0**. See the [changelog](CHANGELOG.md), [project review](docs/code-review.md), and [versioning policy](docs/versioning.md).
 
 GitHub stores source and runs checks. Pushing source does not update a running instance. Rebuild standalone Compose deployments deliberately; ChatGPT Sites deployments use the Sites publication process.
 

@@ -477,9 +477,9 @@ function setupStage(stage) {
 }
 function updateCommands() {
   const docker=$('sudo-docker').checked?'sudo docker':'docker';
-  $('deploy-commands').textContent='cd /srv/docker/docker-dashboard-collector &&\n'+docker+' compose config --quiet &&\n'+docker+' compose up -d';
-  $('transfer-commands').textContent='test ! -e /srv/docker/docker-dashboard-collector &&\nsudo install -d -m 0700 -o "$(id -u)" -g "$(id -g)" /srv/docker/docker-dashboard-collector &&\ncd /srv/docker/docker-dashboard-collector &&\n(umask 077\n tar --keep-old-files -xf ~/Downloads/crowsnest-collector.tar &&\n printf \'COLLECTOR_UID=%s\\nCOLLECTOR_GID=%s\\n\' "$(id -u)" "$(id -g)" > .env)';
-  $('log-command').textContent='cd /srv/docker/docker-dashboard-collector\n'+docker+' compose logs --tail=30 collector';
+  $('deploy-commands').textContent='cd /srv/docker/crowsnest-collector &&\n'+docker+' compose config --quiet &&\n'+docker+' compose up -d';
+  $('transfer-commands').textContent='test ! -e /srv/docker/crowsnest-collector &&\nsudo install -d -m 0700 -o "$(id -u)" -g "$(id -g)" /srv/docker/crowsnest-collector &&\ncd /srv/docker/crowsnest-collector &&\n(umask 077\n tar --keep-old-files -xf ~/Downloads/crowsnest-collector.tar &&\n printf \'COLLECTOR_UID=%s\\nCOLLECTOR_GID=%s\\n\' "$(id -u)" "$(id -g)" > .env)';
+  $('log-command').textContent='cd /srv/docker/crowsnest-collector\n'+docker+' compose logs --tail=30 collector';
 }
 function openSetup() {
   setupSession++;enrollmentId=null;clearSetupPackage();
@@ -632,7 +632,7 @@ $('rotate-token').onclick=async()=>{
     const blob=await response.blob();if(!managementCurrent(session,id))return;
     if(configUrl)URL.revokeObjectURL(configUrl);configUrl=URL.createObjectURL(blob);
     $('config-download').href=configUrl;rotationRevision=revision;rotationExpiry=Date.now()+600000;
-    $('rotation-commands').textContent='cd /srv/docker/docker-dashboard-collector\ninstall -m 0600 ~/Downloads/collector.json ./collector.json\nsudo docker compose up -d --force-recreate collector';
+    $('rotation-commands').textContent="bash <<'CROWSNEST_ROTATE'\nset -eu\n"+collectorDirectoryCommands().join('\n')+'\ntest -O .\ninstall -m 0600 ~/Downloads/collector.json ./collector.json\nsudo docker compose up -d --force-recreate collector\nCROWSNEST_ROTATE';
     $('rotation-result').hidden=false;updateEnrollment();$('config-download').focus();
   }catch(error){if(managementCurrent(session,id))showError('management-message',error);}finally{if(managementCurrent(session,id))$('rotate-token').disabled=false;}
 };

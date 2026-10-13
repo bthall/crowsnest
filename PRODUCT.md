@@ -16,11 +16,11 @@ Keep host and container status visible from one private dashboard. Make installa
 
 ## Operating Context
 
-Docker Engine and Compose on Linux hosts. Collectors report outbound over HTTPS. The owner prefers deployments below `/srv/docker`, clean directory/container names, and files usable by a normal user. The current instance is hosted privately through ChatGPT Sites; standalone Docker deployment is being added.
+Docker Engine and Compose on Linux hosts. Collectors report outbound over HTTPS. The owner prefers deployments below `/srv/docker`, clean directory/container names, and files usable by a normal user. The current instance is hosted privately through ChatGPT Sites; standalone Docker deployment is available.
 
 ## Capabilities and Constraints
 
-Read-only monitoring, separate reporting credentials per host, a restricted socket proxy, collector versions, container details, Compose grouping, activity, ntfy notifications, and timed maintenance. Do not collect environment variables, logs, mounts, or network addresses without a separate product decision. The GitHub repository is private; public visibility is not yet authorized. MIT licensing is confirmed. Never commit runtime credentials or real fleet data.
+Read-only monitoring, separate reporting credentials per host, a restricted socket proxy, collector versions, container details, Compose grouping, activity, ntfy notifications, and timed maintenance. Do not collect environment variables, logs, mounts, or network addresses without a separate product decision. The owner has approved public source and image distribution and will manage the GitHub visibility changes. MIT licensing is confirmed. Never commit runtime credentials or real fleet data.
 
 ## Brand Commitments
 

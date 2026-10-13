@@ -23,7 +23,7 @@ try {
   }
   env.NTFY_URL='https://ntfy.example.com/fleet';
   const created=await call('/api/hosts','POST',{name:'lighthouse'}), installer=await created.text();
-  const config=JSON.parse(installer.match(/cat > collector.json <<'DOCKER_WATCH_FILE_EOF'\n([\s\S]*?)\nDOCKER_WATCH_FILE_EOF/)[1]);
+  const config=JSON.parse(installer.match(/cat > collector.json <<'CROWSNEST_FILE_EOF'\n([\s\S]*?)\nCROWSNEST_FILE_EOF/)[1]);
   const id=config.hostId, auth={Authorization:'Bearer '+config.hostToken};
   const report={engineVersion:'29',containers:[{id:'a'.repeat(64),name:'web',image:'nginx',state:'running',health:'healthy',restarts:0,startedAt:'',finishedAt:''}]};
   const deliver=()=>call('/api/ingest/'+id,'POST',report,auth);

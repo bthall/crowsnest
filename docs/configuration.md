@@ -24,10 +24,10 @@ The hosting manifest retains the existing Site's identifier and declares the `BU
 
 | Item | Default or behavior |
 | --- | --- |
-| Directory | `/srv/docker/docker-dashboard-collector` |
-| Compose project | `docker-dashboard` |
-| Collector container | `docker-dashboard-collector` |
-| Proxy container | `docker-dashboard-socket-proxy` |
+| Directory | `/srv/docker/crowsnest-collector` |
+| Compose project | `crowsnest-collector` |
+| Collector container | `crowsnest-collector` |
+| Proxy container | `crowsnest-socket-proxy` |
 | Docker socket | `/var/run/docker.sock` |
 | Reporting interval | 30 seconds |
 | Dashboard refresh interval | 15 seconds |

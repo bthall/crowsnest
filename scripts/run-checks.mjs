@@ -2,8 +2,8 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
-const directory=mkdtempSync(path.join(os.tmpdir(),'docker-dashboard-checks-'));
-const env={...process.env,DOCKER_WATCH_TEST_DIRECTORY:directory};
+const directory=mkdtempSync(path.join(os.tmpdir(),'crowsnest-checks-'));
+const env={...process.env,CROWSNEST_TEST_DIRECTORY:directory};
 // Test ownership against the actual user running the tests.
 delete env.SUDO_UID;
 delete env.SUDO_GID;

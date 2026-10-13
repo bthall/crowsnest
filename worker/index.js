@@ -51,11 +51,12 @@ function validatedReport(data) {
 function installer(config) {
   const blocks=[['compose.yaml',COMPOSE],['collector.py',COLLECTOR],['proxy.cfg',PROXY]];
   blocks.push(['collector.json',JSON.stringify(config,null,2)]);
-  const files=blocks.map(([file,body])=>"cat > "+file+" <<'DOCKER_WATCH_FILE_EOF'\n"+body+"\nDOCKER_WATCH_FILE_EOF\n").join('');
+  const files=blocks.map(([file,body])=>"cat > "+file+" <<'CROWSNEST_FILE_EOF'\n"+body+"\nCROWSNEST_FILE_EOF\n").join('');
   return SETUP.replace('__WRITE_FILES__',()=>files);
 }
+// __COLLECTOR_DIRECTORY_SOURCE__
 function collectorUpdate() {
-  return ["bash <<'CROWSNEST_UPDATE'",'set -eu','cd "${CROWSNEST_COLLECTOR_DIR:-/srv/docker/docker-dashboard-collector}"',
+  return ["bash <<'CROWSNEST_UPDATE'",'set -eu',...collectorDirectoryCommands(),
     'test -O .','test -f collector.json','test -f compose.yaml','test ! -L collector.py','test ! -L proxy.cfg',
     'update_file="$(mktemp .collector.py.XXXXXX)"','proxy_file="$(mktemp .proxy.cfg.XXXXXX)"',
     "trap 'rm -f \"$update_file\" \"$proxy_file\"' EXIT", "cat > \"$update_file\" <<'CROWSNEST_COLLECTOR_SOURCE'",COLLECTOR,'CROWSNEST_COLLECTOR_SOURCE',
@@ -251,7 +252,7 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
       const id=crypto.randomUUID(), token=crypto.randomUUID()+crypto.randomUUID();
       await env.BUCKET.put('hosts/'+id+'.json',JSON.stringify({id,name:data.name,tokenHash:await hash(token),createdAt:new Date().toISOString()}));
       if(['compose','setup'].includes(data.format))return collectorDownload(collectorConfig(env,id,token),data.format);
-      return new Response(installer(collectorConfig(env,id,token)),{headers:{...headers,'Content-Type':'application/octet-stream','Content-Disposition':'attachment; filename="docker-watch-setup.sh"'}});
+      return new Response(installer(collectorConfig(env,id,token)),{headers:{...headers,'Content-Type':'application/octet-stream','Content-Disposition':'attachment; filename="crowsnest-setup.sh"'}});
     }
     const hostRoute=path.match(/^\/api\/hosts\/([a-f0-9-]{36})(?:\/(collector|maintenance))?$/);
     if(hostRoute && ['PATCH','DELETE','POST'].includes(request.method)) {

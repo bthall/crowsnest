@@ -1,7 +1,7 @@
-name: docker-dashboard
+name: crowsnest-collector
 services:
   socket-proxy:
-    container_name: docker-dashboard-socket-proxy
+    container_name: crowsnest-socket-proxy
     image: haproxy:3.0-alpine
     restart: unless-stopped
     user: "0:0"
@@ -13,7 +13,7 @@ services:
       - ./proxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
     networks: [docker-internal]
   collector:
-    container_name: docker-dashboard-collector
+    container_name: crowsnest-collector
     image: python:3.13-alpine
     user: "${COLLECTOR_UID:?Set COLLECTOR_UID in .env}:${COLLECTOR_GID:?Set COLLECTOR_GID in .env}"
     restart: unless-stopped

@@ -1,0 +1,80 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {testBucket} from './test-storage.mjs';
+const source=await readFile('dist/server/index.js','utf8');
+const module=await import('data:text/javascript;base64,'+Buffer.from(source+'\nexport {recordSignals,notifyHost,SIGNAL_DEFAULTS};').toString('base64'));
+const objects=new Map(),bucket=testBucket(objects), env={SITE_ORIGIN:'https://board.example.com',COLLECTOR_SERVICE_TOKEN:'test-service-token',NTFY_URL:'https://ntfy.example.com/fictional-private-topic',NTFY_TOKEN:'test-ntfy-token',NTFY_ENABLED:'true',BUCKET:bucket};
+const viewer={'oai-authenticated-user-id':'owner',Origin:env.SITE_ORIGIN};
+const call=(path,method='GET',data,headers=viewer)=>module.default.fetch(new Request(env.SITE_ORIGIN+path,{method,headers,body:data===undefined?undefined:JSON.stringify(data)}),env);
+const DateClass=Date,originalFetch=fetch;
+let clock=Date.now()-3600000;
+globalThis.Date=class extends DateClass {constructor(...args){super(...args.length?args:[clock]);}static now(){return clock;}};
+const messages=[];let fail=false;
+globalThis.fetch=async(url,options)=>{messages.push(JSON.parse(options.body));return new Response(JSON.stringify({event:'message',topic:'fictional-private-topic',id:'fixture-ack'}),{status:fail?503:200});};
+try {
+  const setup=await (await call('/api/hosts','POST',{name:'signals-host',format:'setup'})).json();
+  const config=JSON.parse(setup.setupCommand.match(/cat > collector.json <<'CROWSNEST_FILE_EOF'\n([\s\S]*?)\nCROWSNEST_FILE_EOF/)[1]);
+  const host=config.hostId,id='a'.repeat(64),auth={Authorization:'Bearer '+config.hostToken};
+  const c={id,name:'web',image:'fixture',state:'running',health:'healthy',restarts:50,startedAt:'',finishedAt:'',resources:{cpuPercent:200,memoryBytes:2097152,memoryLimitBytes:4194304,sampleSeconds:30}};
+  const report={engineVersion:'fixture',resourceSampling:'complete',containers:[c]};
+  const send=async(seconds=30)=>{clock+=seconds*1000;assert.equal((await call('/api/ingest/'+host,'POST',report,auth)).status,200);};
+  const policy=async(data)=>{const response=await call('/api/notifications','PATCH',{enabled:true,recoveries:true,...data});assert.equal(response.status,200);};
+  const defaults=await (await call('/api/notifications')).json();
+  for(const k of ['cpuAlerts','memoryAlerts','restartBursts'])assert.equal(defaults[k],false);
+  await send();assert.equal(messages.length,0,'New rules are opt-in');
+  await policy({cpuAlerts:true,memoryAlerts:true,cpuThreshold:150,memoryMiB:1,resourceMinutes:1,restartBursts:true,restartCount:3,restartWindowMinutes:5,cooldownMinutes:5});
+  await send();await send();assert.equal(messages.length,0,'Lifetime restart count and brief resource spikes do not alert');
+  await send();assert.equal(messages.length,1);
+  const visible=(await (await call('/api/hosts')).json()).hosts[0].alertSignals;
+  assert.equal(visible.length,2);assert.ok(visible.every(s=>s.containerId===id));assert.ok(!JSON.stringify(visible).includes(config.hostToken));
+  assert.match(messages.at(-1).message,/CPU above 150%/);assert.match(messages.at(-1).message,/memory above 1 MiB/);
+  assert.equal(new URL(messages.at(-1).click).searchParams.get('container'),id);
+  await send();assert.equal(messages.length,1,'Sustained reports deduplicate');
+  c.resources.cpuPercent=null;c.resources.memoryBytes=null;await send();assert.equal(messages.length,1,'Missing measurements do not claim recovery');
+  c.resources.cpuPercent=20;c.resources.memoryBytes=500;await send();assert.equal(messages.length,2);assert.match(messages.at(-1).message,/CPU alert cleared/);
+  c.resources.cpuPercent=200;c.resources.memoryBytes=2097152;
+  await send();await send();await send();assert.equal(messages.length,2,'Repeat conditions wait for cooldown');
+  for(let i=0;i<8;i++)await send();assert.equal(messages.length,3,'Still-active conditions alert once cooldown expires');
+  c.restarts+=3;await send();assert.equal(messages.length,4);assert.match(messages.at(-1).message,/3 observed restarts in 5 minutes/);
+  await send();assert.equal(messages.length,4);
+  c.restarts=0;await send();assert.equal(messages.length,4,'Counter reset starts a new observed window');
+  for(let i=0;i<10;i++)await send();assert.equal(messages.length,5);assert.match(messages.at(-1).message,/Restart burst alert cleared/);
+  const before=messages.length;
+  await policy({cpuAlerts:false,memoryAlerts:false,restartBursts:false});await send();assert.equal(messages.length,before,'Changing policy is not a recovery');
+  await policy({cpuAlerts:true,memoryAlerts:true,restartBursts:true});
+  await call('/api/hosts/'+host+'/maintenance','POST',{minutes:15});
+  await send();c.restarts+=20;await send();assert.equal(messages.length,before,'Maintenance suppresses alerts and observations');
+  await call('/api/hosts/'+host+'/maintenance','POST',{minutes:0});
+  await send();assert.equal(messages.length,before);await send();await send();assert.equal(messages.length,before+1,'Resource duration starts after maintenance');
+  assert.doesNotMatch(messages.at(-1).message,/observed restarts/,'Paused restarts are not counted');
+  // A stale gap cannot complete a duration or produce a rate from accumulated counters.
+  c.resources.cpuPercent=20;c.resources.memoryBytes=500;await send();
+  c.resources.cpuPercent=200;c.resources.memoryBytes=2097152;c.restarts+=50;const beforeGap=messages.length;await send(180);assert.equal(messages.length,beforeGap);
+  const state=JSON.parse(objects.get('signals/'+host+'.json'));assert.equal(state.containers[id].bursts.length,0);
+  const snapshot=JSON.parse(objects.get('snapshots/'+host+'.json'));
+  await module.recordSignals(bucket,{id:host}, {...snapshot,receivedAt:new Date(clock-1).toISOString()},await (await call('/api/notifications')).json());
+  assert.equal(JSON.parse(objects.get('signals/'+host+'.json')).at,clock,'An older observation cannot overwrite newer state');
+  // New resource rules have strict, bounded input and remain owner-only.
+  for(const settings of [{cpuAlerts:'yes'},{cpuThreshold:0},{cpuThreshold:1.5},{memoryMiB:1048577},{resourceMinutes:3},{restartCount:1},{restartWindowMinutes:60},{cooldownMinutes:0}])assert.equal((await call('/api/notifications','PATCH',{enabled:true,recoveries:true,...settings})).status,400);
+  assert.equal((await call('/api/notifications','PATCH',{enabled:true,recoveries:true,cpuAlerts:true},{Origin:'https://attacker.example.com','oai-authenticated-user-id':'owner'})).status,403);
+  assert.equal((await call('/api/resources?host='+host+'&container='+id,'GET',undefined,auth)).status,401);
+  // Failed delivery is retried without rejecting collector reports.
+  await policy({cpuThreshold:100,resourceMinutes:1});fail=true;await send();await send();await send();
+  assert.equal((await (await call('/api/notifications')).json()).lastError,'HTTP 503');
+  fail=false;await send(30);assert.equal((await (await call('/api/notifications')).json()).lastError,null);
+  // Ingestion and sweeps racing for one fresh transition have one publisher.
+  const concurrentReport=JSON.parse(objects.get('snapshots/'+host+'.json'));concurrentReport.containers[0].health='unhealthy';
+  const hostRecord=JSON.parse(objects.get('hosts/'+host+'.json')),settings=await (await call('/api/notifications')).json();
+  clock+=30000;concurrentReport.receivedAt=new Date().toISOString();
+  const beforeConcurrent=messages.length;
+  await Promise.all([module.notifyHost(env,hostRecord,concurrentReport,settings),module.notifyHost(env,hostRecord,concurrentReport,settings)]);
+  assert.equal(messages.length,beforeConcurrent+1,'Only the lease winner publishes');
+  // A long sweep uses its start time for policy evaluation, but leases use acquisition time.
+  await bucket.put('notifications/hosts/'+host+'.json',JSON.stringify({destination:env.NTFY_URL,delivered:{}}));
+  await bucket.put('notifications/locks/'+host+'.json',JSON.stringify({owner:'expired',until:clock-30000}));
+  const delayed=await module.notifyHost(env,hostRecord,concurrentReport,{...settings,cpuAlerts:false,memoryAlerts:false,restartBursts:false},clock-60000);
+  assert.equal(delayed.sent,1,'An expired lease does not block a later sweep batch');
+  await call('/api/hosts/'+host,'DELETE',{confirmName:'signals-host'});assert.ok(!objects.has('signals/'+host+'.json'));
+  assert.ok(!objects.has('notifications/locks/'+host+'.json'));
+  console.log('Passed: sustained thresholds, missing data, cooldowns, real restart deltas, resets, maintenance, stale gaps, policy changes, private links, strict inputs, retry and cleanup.');
+}finally{globalThis.Date=DateClass;globalThis.fetch=originalFetch;}

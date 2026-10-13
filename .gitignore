@@ -23,6 +23,7 @@ id_rsa
 id_ecdsa
 id_ed25519
 output/
+.impeccable/review/
 .playwright-cli/
 .playwright/
 notifier.json

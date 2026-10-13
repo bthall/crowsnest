@@ -43,11 +43,12 @@ function fixtures() {
     host.snapshot.resourceSampling='complete';
     for(const [number,c] of host.snapshot.containers.entries())if(c.state==='running')c.resources={cpuPercent:3.6+number*2.4,memoryBytes:(48+number*64)*1048576,memoryLimitBytes:1073741824,sampleSeconds:30};
   }
+  data.hosts[0].alertSignals=[{containerId:containerId('immich-server'),kind:'memoryAlerts',text:'immich-server: memory above 128 MiB for at least 5 minute(s)'}];
   return data;
 }
-function resourceFixtures(id) {
+function resourceFixtures(id,container) {
   if(id==='demo-rookery')return [];
-  return Array.from({length:288},(_,i)=>({at:ago((287-i)*300+8),cpuPercent:i<2 || i===197?null:30+20*Math.sin(i/25)+7*Math.sin(i/6),memoryBytes:(1150+120*Math.sin(i/40))*1048576,runningContainers:5,sampling:i<2 || i===197?'warming':'complete'})).filter((_,i)=>i<82 || i>100);
+  return Array.from({length:288},(_,i)=>({at:ago((287-i)*300+8),cpuPercent:i<2 || i===197?null:Math.max(0,(container?10:30)+(container?8:20)*Math.sin(i/25)+7*Math.sin(i/6)),memoryBytes:((container?240:1150)+(container?30:120)*Math.sin(i/40))*1048576,runningContainers:5,sampling:i<2 || i===197?'warming':'complete'})).filter((_,i)=>i<82 || i>100);
 }
 const assets = new Map([
   ['/', ['worker/board.html', 'text/html; charset=utf-8']],
@@ -59,9 +60,9 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   res.setHeader('Cache-Control', 'no-store');
   if(url.pathname==='/api/notifications' && req.method==='GET') {
-    res.setHeader('Content-Type','application/json');res.end(JSON.stringify({configured:true,destination:'https://ntfy.example.com/crowsnest-illustrative-private-topic',authenticated:true,enabled:true,recoveries:true,hostReports:true,unhealthy:true,restarting:true,dead:true,staleMinutes:5,priority:4,lastSuccessAt:ago(180),lastSweepAt:ago(90)}));return;
+    res.setHeader('Content-Type','application/json');res.end(JSON.stringify({configured:true,destination:'https://ntfy.example.com/crowsnest-illustrative-private-topic',authenticated:true,enabled:true,recoveries:true,hostReports:true,unhealthy:true,restarting:true,dead:true,cpuAlerts:true,cpuThreshold:150,memoryAlerts:true,memoryMiB:128,resourceMinutes:5,restartBursts:true,restartCount:5,restartWindowMinutes:10,cooldownMinutes:10,staleMinutes:5,priority:4,lastSuccessAt:ago(180),lastSweepAt:ago(90)}));return;
   }
-  if(url.pathname==='/api/resources' && req.method==='GET'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({samples:resourceFixtures(url.searchParams.get('host')),windowSeconds:300,retentionHours:24}));return;}
+  if(url.pathname==='/api/resources' && req.method==='GET'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({samples:resourceFixtures(url.searchParams.get('host'),url.searchParams.get('container')),windowSeconds:300,retentionHours:24}));return;}
   if(url.pathname==='/api/history' && req.method==='GET') {
     const events=[
       {at:ago(45),kind:'status',text:'immich-server: running/healthy → running/unhealthy',containerId:containerId('immich-server'),hostId:'demo-lighthouse',hostName:'lighthouse'},

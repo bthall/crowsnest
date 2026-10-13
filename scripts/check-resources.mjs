@@ -23,6 +23,12 @@ report.resourceSampling='complete';c.resources={cpuPercent:250,memoryBytes:800,m
 assert.equal((await send()).status,200);
 let samples=(await (await call(path)).json()).samples;
 assert.equal(samples.length,1);assert.equal(samples[0].cpuPercent,250);assert.equal(samples[0].memoryBytes,800);
+const containerPath=path+'&container='+c.id;
+let readings=(await (await call(containerPath)).json()).samples;
+assert.equal(readings[0].cpuPercent,250);assert.equal(readings[0].memoryBytes,800);
+assert.ok(!JSON.stringify(samples).includes(c.id),'Host aggregate responses omit per-container storage');
+assert.equal((await call(path+'&container=../private')).status,400);
+assert.equal((await call(containerPath,'GET',undefined,auth)).status,401);
 assert.ok(!objects.get('snapshots/'+id+'.json').includes('private data'));
 for(const [key,values] of Object.entries({cpuPercent:[-1,'1',1000001],memoryBytes:[-1,1.5,Number.MAX_SAFE_INTEGER+1],sampleSeconds:[121,'NaN'],memoryLimitBytes:[true,{}]})) {
   const previous=c.resources[key];
@@ -47,6 +53,24 @@ const raceKey='resources/race.json';let collided=false;
 const racing={...bucket,async put(key,value,options){if(!collided){collided=true;objects.set(key,JSON.stringify([{at:new Date(now+1).toISOString(),cpuPercent:99,memoryBytes:99} ]));return null;}return bucket.put(key,value,options);}};
 await recordResources(racing,'race',{...latest,receivedAt:new Date(now+2).toISOString()});
 assert.equal(JSON.parse(objects.get(raceKey)).length,1);
+// ID-scoped readings cannot inherit a replaced container's same-name history.
+objects.set('resources/'+id+'.json',JSON.stringify([
+ {at:new Date(now-600000).toISOString(),containers:[[c.id,10,100]],sampling:'complete'},
+ {at:new Date(now-300000).toISOString(),containers:[['b'.repeat(64),20,200]],sampling:'complete'},
+ {at:new Date(now).toISOString(),containers:[[c.id,null,300]],sampling:'warming'},
+]));
+readings=(await (await call(containerPath)).json()).samples;
+assert.deepEqual(readings.map(s=>s.cpuPercent),[10,null,null]);assert.deepEqual(readings.map(s=>s.memoryBytes),[100,null,300]);
+const replaced=(await (await call(path+'&container='+'b'.repeat(64))).json()).samples;
+assert.deepEqual(replaced.map(s=>s.memoryBytes),[200,null]);
+assert.deepEqual((await (await call(path+'&container='+'f'.repeat(64))).json()).samples,[]);
+// A maximally populated host cannot grow an unbounded R2 object.
+const denseContainers=Array.from({length:250},(_,i)=>({id:String(i+1).padStart(64,'0'),state:'running',resources:{cpuPercent:1,memoryBytes:1048576}}));
+const densePoints=denseContainers.map(c=>[c.id,1,1048576]);
+objects.set('resources/dense.json',JSON.stringify(Array.from({length:288},(_,i)=>({at:new Date(now-(287-i)*300000).toISOString(),cpuPercent:250,memoryBytes:262144000,containers:densePoints}))));
+await recordResources(bucket,'dense',{receivedAt:new Date(now).toISOString(),resourceSampling:'complete',containers:denseContainers});
+assert.ok(Buffer.byteLength(objects.get('resources/dense.json'))<=2097152);
+const bounded=JSON.parse(objects.get('resources/dense.json'));assert.ok(bounded.length<288);assert.equal(bounded.at(-1).containers.length,250);
 // Group changes preserve credential rotation and old name-only clients preserve groups.
 assert.equal((await call('/api/hosts/'+id,'PATCH',{name:'lighthouse',group:'Production'})).status,200);
 assert.equal((await (await call('/api/hosts')).json()).hosts[0].group,'Production');

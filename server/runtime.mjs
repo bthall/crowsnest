@@ -92,12 +92,14 @@ export async function createRuntime(config, {schedule = true, assets} = {}) {
         return json({error: 'Not found'}, 404);
       }
       if (url.pathname === '/login' && method === 'GET') {
-        if (authenticated && url.searchParams.get('recover') !== '1') return new Response(null, {status: 303, headers: {...securityHeaders, Location: '/'}});
+        let destination='/';
+        try {const target=new URL(url.searchParams.get('next')||'/',config.origin);if(target.origin===config.origin && target.pathname==='/')destination=target.pathname+target.search;}catch{}
+        if (authenticated && url.searchParams.get('recover') !== '1') return new Response(null, {status: 303, headers: {...securityHeaders, Location: destination}});
         return new Response(authAssets[0], {headers: {...securityHeaders, 'Content-Type': 'text/html; charset=utf-8'}});
       }
       if (['/assets/auth.js', '/assets/auth.css'].includes(url.pathname) && method === 'GET') return new Response(authAssets[url.pathname.endsWith('.js') ? 1 : 2], {headers: {...securityHeaders, 'Content-Type': url.pathname.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/css; charset=utf-8'}});
       const publicAsset = ['/assets/board.css', '/assets/crowsnest-mark.png'].includes(url.pathname) && method === 'GET';
-      if (!authenticated && !ingest && !publicAsset) return url.pathname === '/' && method === 'GET' ? new Response(null, {status: 303, headers: {...securityHeaders, Location: '/login'}}) : json({error: 'Sign in to view this private board'}, 401);
+      if (!authenticated && !ingest && !publicAsset) return url.pathname === '/' && method === 'GET' ? new Response(null, {status: 303, headers: {...securityHeaders, Location: '/login'+(url.search?'?next='+encodeURIComponent('/'+url.search):'')}}) : json({error: 'Sign in to view this private board'}, 401);
       if (url.pathname === '/api/session' && method === 'GET') return json({standalone: true});
       if (url.pathname === '/api/notifications/sweep' && method === 'POST') return json({error: 'Notification checks run automatically'}, 409);
       const requestHeaders = new Headers();

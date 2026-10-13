@@ -1,6 +1,7 @@
 // Embedded in the Worker. Five-minute windows retain their latest report, not an average.
 const RESOURCE_WINDOW = 300000;
 const RESOURCE_RETENTION = 86400000;
+const RESOURCE_MAX_BYTES = 2097152;
 const RESOURCE_STATES = new Set(['complete','warming','partial','unavailable','unsupported','report_limit']);
 function validatedResources(value) {
   if(!value || typeof value!=='object' || Array.isArray(value))throw new Error('Invalid resources');
@@ -33,12 +34,26 @@ async function recordResources(bucket,id,report) {
   for(let attempt=0;attempt<3;attempt++) {
     const object=await bucket.get(key), samples=retainedResourceSamples(object?await object.json():[],Date.now());
     const window=Math.floor(now/RESOURCE_WINDOW);
-    const entry={at:report.receivedAt,...workload};
+    const entry={at:report.receivedAt,...workload,containers:report.containers.filter(c=>c.state==='running').map(c=>[c.id,c.resources?.cpuPercent??null,c.resources?.memoryBytes??null])};
     const index=samples.findIndex(s=>Math.floor(Date.parse(s.at)/RESOURCE_WINDOW)===window);
     if(index>=0){if(Date.parse(samples[index].at)>now)return;samples[index]=entry;}else samples.push(entry);
     samples.sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
-    const written=await bucket.put(key,JSON.stringify(samples.slice(-288)),{onlyIf:object?{etagMatches:object.etag}:{etagDoesNotMatch:'*'}});
+    const parts=samples.slice(-288).map(s=>JSON.stringify(s));
+    const sizes=parts.map(s=>new TextEncoder().encode(s).length+1);
+    let size=sizes.reduce((n,s)=>n+s,1);
+    while(size>RESOURCE_MAX_BYTES && parts.length>1){size-=sizes.shift();parts.shift();}
+    const written=await bucket.put(key,'['+parts.join(',')+']',{onlyIf:object?{etagMatches:object.etag}:{etagDoesNotMatch:'*'}});
     if(written)return;
   }
   throw new Error('Resource history changed');
+}
+function resourceReadings(samples,container) {
+  if(!container)return samples.map(({containers,...sample})=>sample);
+  const readings=samples.map(s=>{
+    const found=s.containers?.find(c=>c[0]===container);
+    return {at:s.at,cpuPercent:found?.[1]??null,memoryBytes:found?.[2]??null,sampling:found?s.sampling:'not_reported',present:!!found};
+  });
+  const first=readings.findIndex(s=>s.present);
+  if(first<0)return [];
+  return readings.slice(first).map(({present,...sample})=>sample);
 }

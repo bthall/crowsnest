@@ -145,6 +145,7 @@ function reportEvents(previous,report) {
 }
 // __NOTIFICATIONS_SOURCE__
 // __RESOURCES_SOURCE__
+// __SIGNALS_SOURCE__
 export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifications(env));},async fetch(request,env,ctx) {
   const url=new URL(request.url), path=url.pathname;
   const viewer=!!request.headers.get('oai-authenticated-user-id');
@@ -166,7 +167,7 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
       if(path==='/api/notifications' && request.method==='PATCH') {
         let data;try{data=await readJson(request,1024);}catch{return json({error:'Invalid settings'},400);}
         const booleanFields=['enabled','recoveries','hostReports','unhealthy','restarting','dead'];
-        if(typeof data.enabled!=='boolean' || typeof data.recoveries!=='boolean' || booleanFields.some(k=>data[k]!==undefined && typeof data[k]!=='boolean') || Object.keys(data).some(k=>![...booleanFields,'staleMinutes','priority'].includes(k)) || data.staleMinutes!==undefined && ![2,5,10,15].includes(data.staleMinutes) || data.priority!==undefined && ![3,4,5].includes(data.priority))return json({error:'Choose valid notification settings, delay, and priority'},400);
+        if(typeof data.enabled!=='boolean' || typeof data.recoveries!=='boolean' || booleanFields.some(k=>data[k]!==undefined && typeof data[k]!=='boolean') || Object.keys(data).some(k=>![...booleanFields,'staleMinutes','priority',...Object.keys(SIGNAL_DEFAULTS)].includes(k)) || data.staleMinutes!==undefined && ![2,5,10,15].includes(data.staleMinutes) || data.priority!==undefined && ![3,4,5].includes(data.priority) || !validSignalSettings(data))return json({error:'Choose valid notification thresholds, durations, delay, and priority'},400);
         if(data.enabled && !ntfyDestination(env.NTFY_URL))return json({error:'Configure NTFY_URL in the Crowsnest runtime first'},409);
         const previous=await notificationSettings(env);
         await env.BUCKET.put('notifications/settings.json',JSON.stringify({...previous,...data}));
@@ -208,6 +209,7 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
       // Optional history failures must not turn a delivered report into an ingestion failure.
       try {await recordHistory(env.BUCKET,host.id,[...reportEvents(previous?await previous.json():null,report),...(replacement?[event('credentials','Reporting token replaced',report.receivedAt)]:[])]);}catch{console.error('History write failed');}
       try {await recordResources(env.BUCKET,host.id,report);}catch{console.error('Resource history write failed');}
+      try {await recordSignals(env.BUCKET,host,report,await notificationSettings(env));}catch{console.error('Alert observations write failed');}
       const notify=async()=>{try{await notifyHost(env,host,report,await notificationSettings(env));}catch{console.error('Notification processing failed');}};
       if(!env.DEFER_NOTIFICATIONS){if(ctx?.waitUntil)ctx.waitUntil(notify());else await notify();}
       return json({ok:true,receivedAt:report.receivedAt});
@@ -218,6 +220,7 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
     if(path==='/' && request.method==='GET')return new Response(HTML,{headers:{...headers,'Content-Type':'text/html; charset=utf-8','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'"}});
     if(path==='/api/hosts' && request.method==='GET') {
       if(!env.BUCKET)return json({error:'Storage unavailable'},503);
+      const settings=await notificationSettings(env),signalEnabled=settings.cpuAlerts || settings.memoryAlerts || settings.restartBursts;
       const hosts=[]; let cursor;
       do {const list=await env.BUCKET.list({prefix:'hosts/',cursor});
         for(let i=0;i<list.objects.length;i+=5) {
@@ -225,7 +228,10 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
             const config=await env.BUCKET.get(item.key);if(!config)return null;
             const h=await config.json();
             const [snapshot,maintenance]=await Promise.all([env.BUCKET.get('snapshots/'+h.id+'.json'),hostMaintenance(env.BUCKET,h.id)]);
-            return {id:h.id,name:h.name,group:h.group||'',createdAt:h.createdAt,credentialRevision:h.tokenRevision||0,maintenanceUntil:maintenance.until||null,snapshot:snapshot?await snapshot.json():null};
+            const report=snapshot?await snapshot.json():null,signals=signalEnabled?await env.BUCKET.get('signals/'+h.id+'.json'):null;
+            const active=advancedIssues(report,signals?await signals.json():null,settings).issues;
+            const alertSignals=Object.entries(active).map(([key,text])=>({containerId:signalContainer(key),kind:signalKind(key),text}));
+            return {id:h.id,name:h.name,group:h.group||'',createdAt:h.createdAt,credentialRevision:h.tokenRevision||0,maintenanceUntil:maintenance.until||null,alertSignals,snapshot:report};
           }));
           hosts.push(...batch.filter(Boolean));
         } cursor=list.truncated?list.cursor:undefined;
@@ -286,7 +292,9 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
         await env.BUCKET.delete('snapshots/'+host.id+'.json');
         await env.BUCKET.delete('history/'+host.id+'.json');
         await env.BUCKET.delete('resources/'+host.id+'.json');
+        await env.BUCKET.delete('signals/'+host.id+'.json');
         await env.BUCKET.delete('notifications/hosts/'+host.id+'.json');
+        await env.BUCKET.delete('notifications/locks/'+host.id+'.json');
         await env.BUCKET.delete('maintenance/hosts/'+host.id+'.json');
         return json({ok:true});
       }
@@ -306,8 +314,11 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
       const id=url.searchParams.get('host');
       if(!id || !/^[a-f0-9-]{36}$/.test(id))return json({error:'Choose a valid host'},400);
       if(!await env.BUCKET.get('hosts/'+id+'.json'))return json({error:'Unknown host'},404);
+      const container=url.searchParams.get('container');
+      if(container!==null && !/^[a-f0-9]{64}$/.test(container))return json({error:'Choose a valid container'},400);
       const object=await env.BUCKET.get('resources/'+id+'.json');
-      return json({samples:retainedResourceSamples(object?await object.json():[],Date.now()),windowSeconds:300,retentionHours:24});
+      const samples=retainedResourceSamples(object?await object.json():[],Date.now());
+      return json({samples:resourceReadings(samples,container),windowSeconds:300,retentionHours:24,maxBytes:RESOURCE_MAX_BYTES});
     }
     if(path==='/api/history' && request.method==='GET') {
       if(!env.BUCKET)return json({error:'Storage unavailable'},503);

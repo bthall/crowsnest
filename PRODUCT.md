@@ -20,7 +20,7 @@ Docker Engine and Compose on Linux hosts. Collectors report outbound over HTTPS.
 
 ## Capabilities and Constraints
 
-Read-only monitoring, separate reporting credentials per host, a restricted socket proxy, collector versions, container details, Compose grouping, activity, ntfy notifications, and timed maintenance. Do not collect environment variables, logs, mounts, or network addresses without a separate product decision. The owner has approved public source and image distribution and will manage the GitHub visibility changes. MIT licensing is confirmed. Never commit runtime credentials or real fleet data.
+Read-only monitoring, separate reporting credentials per host, a restricted socket proxy, collector versions, container details, Compose grouping, activity, bounded CPU/memory measurements and host/container resource history, ntfy notifications with optional sustained CPU/memory and observed restart-burst rules, and timed maintenance. Do not collect environment variables, logs, mounts, or network addresses without a separate product decision. The owner has approved public source and image distribution and will manage the GitHub visibility changes. MIT licensing is confirmed. Never commit runtime credentials or real fleet data.
 
 ## Brand Commitments
 

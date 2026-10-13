@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 
-const image = process.argv[2] || 'crowsnest:0.10.0';
+const image = process.argv[2] || 'crowsnest:0.11.0';
 const name = 'crowsnest-check-' + randomUUID();
 const volume = name + '-data';
 const environment = {...process.env};
@@ -67,9 +67,11 @@ try {
     console.log('Image probe: concurrent sign-ins accepted');
     cookie=parallel[0].cookie;
     assert.equal((await request('/api/hosts/'+enrollment.hostId,'PATCH',{name:'image-test-host',group:'Fixture'})).status,200);
-    assert.equal((await request('/api/notifications','PATCH',{enabled:false,recoveries:true,dead:false,priority:5,staleMinutes:10})).status,200);
+    assert.equal((await request('/api/notifications','PATCH',{enabled:false,recoveries:true,dead:false,priority:5,staleMinutes:10,cpuAlerts:true,cpuThreshold:200,resourceMinutes:15,restartBursts:true,restartCount:8,cooldownMinutes:30})).status,200);
     const resources=JSON.parse((await request('/api/resources?host='+enrollment.hostId)).text).samples;
     assert.equal(resources.length,1);assert.equal(resources[0].cpuPercent,50);assert.equal(resources[0].memoryBytes,800);
+    assert.equal(resources[0].containers,undefined);
+    assert.equal(JSON.parse((await request('/api/resources?host='+enrollment.hostId+'&container='+'a'.repeat(64))).text).samples[0].memoryBytes,800);
   } else {
     const login = await request('/auth/login', 'POST', {username: 'owner', password});
     assert.equal(login.status,200); cookie = login.cookie;
@@ -77,7 +79,9 @@ try {
     assert.equal(hosts.length,1); assert.equal(hosts[0].name,'image-test-host'); assert.ok(hosts[0].snapshot);
     assert.equal(hosts[0].group,'Fixture');
     assert.equal(JSON.parse((await request('/api/resources?host='+hosts[0].id)).text).samples[0].memoryBytes,800);
+    assert.equal(JSON.parse((await request('/api/resources?host='+hosts[0].id+'&container='+'a'.repeat(64))).text).samples[0].memoryBytes,800);
     const policy=JSON.parse((await request('/api/notifications')).text);assert.equal(policy.dead,false);assert.equal(policy.priority,5);assert.equal(policy.staleMinutes,10);
+    assert.equal(policy.cpuAlerts,true);assert.equal(policy.cpuThreshold,200);assert.equal(policy.resourceMinutes,15);assert.equal(policy.restartBursts,true);assert.equal(policy.restartCount,8);assert.equal(policy.cooldownMinutes,30);
   }
   console.log('Image check passed: '+phase);
   try { console.log('Image peak memory bytes: '+readFileSync('/sys/fs/cgroup/memory.peak','utf8').trim()); } catch {}

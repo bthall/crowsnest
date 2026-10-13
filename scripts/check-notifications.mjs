@@ -33,7 +33,7 @@ try {
   report.containers[0].health='unhealthy';await deliver();assert.equal(requests.length,1);
   const sent=JSON.parse(requests[0].options.body);
   assert.equal(requests[0].url,'https://ntfy.example.com/');assert.equal(requests[0].options.redirect,'manual');
-  assert.equal(requests[0].options.headers.Authorization,'Bearer '+env.NTFY_TOKEN);assert.equal(sent.priority,4);assert.match(sent.message,/web: running\/unhealthy/);assert.equal(sent.click,env.SITE_ORIGIN);
+  assert.equal(requests[0].options.headers.Authorization,'Bearer '+env.NTFY_TOKEN);assert.equal(sent.priority,4);assert.match(sent.message,/web: running\/unhealthy/);assert.equal(new URL(sent.click).searchParams.get('host'),id);assert.equal(new URL(sent.click).searchParams.get('container'),report.containers[0].id);
   await deliver();await deliver();assert.equal(requests.length,1,'Repeated unhealthy reports are deduplicated');
   resetBackoff(id);report.containers[0].health='healthy';await deliver();assert.equal(requests.length,2);assert.match(JSON.parse(requests.at(-1).options.body).message,/Cleared:/);
   resetBackoff(id);report.containers[0].state='dead';fail=true;assert.equal((await deliver()).status,200,'ntfy failure does not reject reports');

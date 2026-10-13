@@ -6,6 +6,7 @@ let enrollmentId = null, packageUrl = null, configUrl = null, managedId = null, 
 let setupCommand = '', setupSession = 0, managementSession = 0;
 let refreshPromise = null;
 let hostGroup = '', groupOptionsKey = '';
+let initialLinkApplied = false;
 let resourceHost = null, resourceSamples = [], resourceError = '', resourceLoading = false, resourceSequence = 0, resourceController = null;
 let availableCollectorVersion = null, collectorUpdateTarget = null, collectorUpdateRequestedAt = 0, collectorUpdatePreviousVersion = null, collectorUpdateBusy = false;
 let detailSelection = null, detailEvents = [], detailHistoryError = '', detailHistoryLoading = false, detailHistorySequence = 0, detailHistoryController = null, detailLegacyMatches = false;
@@ -255,6 +256,7 @@ async function loadHosts() {
     hosts = data.hosts;availableCollectorVersion=validCollectorVersion(data.availableCollectorVersion)?data.availableCollectorVersion:null;
     if (selected !== null && !hosts.some(h => h.id === selected)) selected = null;
     loaded = true; lastError = '';
+    if(!initialLinkApplied){initialLinkApplied=true;applyDashboardLink();}
     $('poll-status').textContent = 'Refreshes every 15 seconds';
   } catch (error) {
     lastError = error.name === 'TimeoutError' ? 'The status request timed out. Last loaded data may be out of date. Try Refresh.' :
@@ -265,19 +267,39 @@ async function loadHosts() {
     render();
     if(view==='activity') loadHistory();
     if(detailSelection && !detailHistoryLoading)loadContainerHistory();
-    if($('resource-history').open && selected && !resourceLoading)loadResourceHistory();
+    if($('resource-history').open && (selected || detailSelection) && !resourceLoading)loadResourceHistory();
   }
 }
 function selectHost(id) {
   closeContainerDetails(false);
   selected=id; attentionOnly=false; $('search').value=''; setupSuccess='';
+  setDashboardLink(id);
   historyEvents=[]; historyError=''; historySequence++;
   render(); if(view==='activity') loadHistory();
+}
+function setDashboardLink(hostId,containerId=null) {
+  const url=new URL(location.href);
+  for(const key of ['host','container'])url.searchParams.delete(key);
+  if(hostId)url.searchParams.set('host',hostId);
+  if(containerId)url.searchParams.set('container',containerId);
+  history.replaceState(null,'',url.pathname+url.search);
+}
+function applyDashboardLink() {
+  const params=new URLSearchParams(location.search),id=params.get('host'),containerId=params.get('container');
+  if(!id)return;
+  const host=hosts.find(h=>h.id===id);
+  if(!host){setupSuccess='The linked host is no longer registered. Showing your fleet.';return;}
+  view='containers';selectHost(id);
+  if(containerId && /^[a-f0-9]{64}$/.test(containerId)) {
+    if(host.snapshot?.containers.some(c=>c.id===containerId))openContainerDetails(id,containerId);
+    else setupSuccess='The linked container is no longer in this host’s latest report. Showing '+host.name+'.';
+  }
 }
 $('host-group-filter').onchange=()=>{hostGroup=$('host-group-filter').value;selectHost(null);};
 function closeContainerDetails(restoreFocus=true) {
   const key=detailSelection?detailSelection.hostId+':'+detailSelection.containerId:null;
   detailSelection=null;detailHistorySequence++;detailHistoryController?.abort();detailHistoryLoading=false;
+  if(restoreFocus)setDashboardLink(selected);
   $('container-details').hidden=true;
   if(restoreFocus){render();const link=[...$('rows').querySelectorAll('.container-link')].find(el=>el.dataset.containerKey===key);(link||(!$('table-tools').hidden?$('search'):$('containers'))).focus({preventScroll:true});}
 }
@@ -285,6 +307,7 @@ function openContainerDetails(hostId,containerId) {
   const host=hosts.find(h=>h.id===hostId), container=host?.snapshot?.containers.find(c=>c.id===containerId);if(!container)return;
   detailHistoryController?.abort();detailHistorySequence++;
   detailSelection={hostId,containerId,lastKnown:container,lastSeenAt:host.snapshot.receivedAt};detailEvents=[];detailHistoryError='';detailLegacyMatches=false;detailHistoryLoading=false;
+  setDashboardLink(hostId,containerId);
   $('detail-copy-status').textContent='';$('container-details').querySelector('details').open=false;
   render();$('detail-title').focus({preventScroll:true});$('container-details').scrollIntoView({block:'start'});loadContainerHistory();
 }
@@ -299,15 +322,19 @@ function formatBytes(value) {
   return (value/1024**power).toLocaleString(undefined,{maximumFractionDigits:1})+' '+units[power-1];
 }
 function renderResourceOverview() {
-  const host=hosts.find(h=>h.id===selected), id=host?.id||null;
+  const host=hosts.find(h=>h.id===(detailSelection?.hostId||selected)), id=host?host.id+':'+(detailSelection?.containerId||''):null;
   if(resourceHost!==id){
     resourceHost=id;resourceSamples=[];resourceError='';resourceLoading=false;resourceSequence++;resourceController?.abort();
     $('resource-history').open=false;$('resource-readings').open=false;
   }
-  $('resource-history').hidden=!host || view!=='containers' || !!detailSelection;
+  $('resource-history').hidden=!host || view!=='containers';
   if(!host)return;
   const report=host.snapshot, running=report?.containers.filter(c=>c.state==='running')||[];
-  const total=key=>report?.resourceSampling && running.every(c=>c.resources?.[key]!=null)?running.reduce((n,c)=>n+c.resources[key],0):null;
+  const container=detailSelection?report?.containers.find(c=>c.id===detailSelection.containerId):null;
+  const total=key=>detailSelection?(container?.state==='running'?container.resources?.[key]:null):report?.resourceSampling && running.every(c=>c.resources?.[key]!=null)?running.reduce((n,c)=>n+c.resources[key],0):null;
+  $('resource-title').textContent=detailSelection?'Resource history · '+detailSelection.lastKnown.name:'Container resources';
+  $('resource-help').textContent=detailSelection?'Readings belong to this full container ID. A replacement container starts its own history.':'Running-container totals for this host; these are container workloads, not whole-host utilization.';
+  $('resource-caption').textContent=detailSelection?'Resource readings for '+detailSelection.lastKnown.name:'Container workload measurements for this host';
   const lastKnown=hostState(host)==='Stale' || !!lastError;
   $('resource-current').textContent=report?'CPU '+formatCpu(total('cpuPercent'))+' · Memory '+formatBytes(total('memoryBytes'))+(lastKnown?' · last reported':''):'Awaiting first report';
   const warnings={warming:'CPU needs two valid readings and may be warming up. Available memory is shown now.',partial:'Some resource measurements are missing. Host totals are unavailable when a running container is missing a measurement.',unavailable:'Resource measurements are unavailable. Update both collector files, then check the restricted proxy and Docker API.',unsupported:'This Docker API does not support bounded resource sampling. Container status still reports.',report_limit:'Resource measurements were omitted to keep this report within the size limit.'};
@@ -345,7 +372,7 @@ function resourceChart(key,label,format) {
   figure.append(svg);return figure;
 }
 function renderResourceHistory() {
-  $('resource-status').textContent=resourceError || (resourceLoading?'Loading resource history…':resourceSamples.length?resourceSamples.length+' retained reading'+(resourceSamples.length===1?'':'s')+'. Times use your local timezone.':'No resource history yet. Readings start with a collector that reports resources.');
+  $('resource-status').textContent=resourceError || (resourceLoading?'Loading resource history…':resourceSamples.length?resourceSamples.length+' retained reading'+(resourceSamples.length===1?'':'s')+'. Times use your local timezone.':detailSelection?'No resource history for this container yet. Readings begin after the dashboard update; earlier host totals cannot be attributed to a container.':'No resource history yet. Readings start with a collector that reports resources.');
   $('resource-retry').hidden=!resourceError;$('resource-retry').disabled=resourceLoading;
   $('resource-readings').hidden=!resourceSamples.length;
   $('resource-charts').hidden=!resourceSamples.length;
@@ -353,10 +380,10 @@ function renderResourceHistory() {
   $('resource-charts').replaceChildren(...resourceSamples.length?[resourceChart('cpuPercent','Container CPU',formatCpu),resourceChart('memoryBytes','Container memory',formatBytes)]:[]);
 }
 async function loadResourceHistory() {
-  const id=selected;if(!id || !$('resource-history').open)return;
+  const id=detailSelection?.hostId||selected,container=detailSelection?.containerId;if(!id || !$('resource-history').open)return;
   const sequence=++resourceSequence;resourceController?.abort();resourceController=new AbortController();resourceLoading=true;resourceError='';renderResourceHistory();
   try {
-    const response=await fetch('/api/resources?host='+encodeURIComponent(id),{cache:'no-store',signal:AbortSignal.any([resourceController.signal,AbortSignal.timeout(10000)])});
+    const response=await fetch('/api/resources?host='+encodeURIComponent(id)+(container?'&container='+encodeURIComponent(container):''),{cache:'no-store',signal:AbortSignal.any([resourceController.signal,AbortSignal.timeout(10000)])});
     if(!response.ok)throw new Error('Unable to refresh resource history. Earlier readings may be out of date. Choose Retry resources.');
     const data=await response.json();if(!Array.isArray(data.samples))throw new Error('Unexpected resource response. Choose Retry resources.');
     if(sequence===resourceSequence)resourceSamples=data.samples;
@@ -431,7 +458,8 @@ function alerts() {
     const state=hostState(h);
     if(state==='Stale') result.push({host:h,text:'No report for '+duration(age(h.snapshot.receivedAt))+'. Container states are last known.'});
     if(!h.snapshot && age(h.createdAt)>600) result.push({host:h,text:'Enrollment has not received a first report. Continue setup or check collector logs.'});
-    for(const c of h.snapshot?.containers||[]) if(needsAttention(c)) result.push({host:h,text:c.name+' · '+c.state+' · '+c.health+(state==='Stale'?' (last known)':'')});
+    for(const c of h.snapshot?.containers||[]) if(needsAttention(c)) result.push({host:h,containerId:c.id,text:c.name+' · '+c.state+' · '+c.health+(state==='Stale'?' (last known)':'')});
+    if(state!=='Stale' && !lastError)for(const signal of h.alertSignals||[])result.push({host:h,containerId:signal.containerId,text:signal.text});
   }
   return result;
 }
@@ -441,7 +469,7 @@ function renderPanels() {
   const current=alerts(); $('alert-count').textContent=current.length;
   if(view==='alerts') {
     $('alerts-status').textContent=current.length?current.length+' current alert(s)':'No current alerts for this view.';
-    $('alerts-list').replaceChildren(...current.map(a=>{const li=node('li');const button=node('button','event-link',a.host.name);button.onclick=()=>{view='containers';selectHost(a.host.id);};li.append(button,node('p','',a.text));if(inMaintenance(a.host))li.append(node('p','input-help',maintenanceText(a.host)));return li;}));
+    $('alerts-list').replaceChildren(...current.map(a=>{const li=node('li');const button=node('button','event-link',a.host.name);button.onclick=()=>{view='containers';selectHost(a.host.id);if(a.containerId)openContainerDetails(a.host.id,a.containerId);};li.append(button,node('p','',a.text));if(inMaintenance(a.host))li.append(node('p','input-help',maintenanceText(a.host)));return li;}));
   }
   if(view==='activity') {
     $('activity-status').textContent=historyError || (historyLoading?'Loading recent activity…':!historyEvents.length?'No recent changes recorded. Activity will appear as reports arrive.':'Showing '+historyEvents.length+' recent events.');
@@ -661,6 +689,8 @@ if (context?.registerTool) {
   window.addEventListener('pagehide', () => lifecycle.abort(), {once: true});
 }
 let notificationBusy=false, notificationConfigured=false;
+const signalCheckboxes=['cpuAlerts','memoryAlerts','restartBursts'];
+const signalValues={cpuThreshold:150,memoryMiB:1024,resourceMinutes:5,restartCount:5,restartWindowMinutes:10,cooldownMinutes:10};
 function setSubscription(value) {
   let url;
   try{url=new URL(value);if(url.protocol!=='https:' || url.username || url.password || url.search || url.hash || !/^\/[a-zA-Z0-9_-]{1,64}$/.test(url.pathname))url=null;}catch{}
@@ -675,8 +705,15 @@ $('copy-topic').onclick=async()=>{
 function notificationControls() {
   for(const id of ['notifications-enabled','notifications-recoveries','notifications-hostReports','notifications-unhealthy','notifications-restarting','notifications-dead','notifications-delay','notifications-priority','notifications-save','notifications-test'])$(id).disabled=notificationBusy || !notificationConfigured;
   $('notifications-delay').disabled ||= !$('notifications-hostReports').checked;
+  for(const key of [...signalCheckboxes,...Object.keys(signalValues)])$('notifications-'+key).disabled=notificationBusy || !notificationConfigured;
+  $('notifications-cpuThreshold').disabled ||= !$('notifications-cpuAlerts').checked;
+  $('notifications-memoryMiB').disabled ||= !$('notifications-memoryAlerts').checked;
+  $('notifications-resourceMinutes').disabled ||= !$('notifications-cpuAlerts').checked && !$('notifications-memoryAlerts').checked;
+  for(const key of ['restartCount','restartWindowMinutes'])$('notifications-'+key).disabled ||= !$('notifications-restartBursts').checked;
+  $('notifications-cooldownMinutes').disabled ||= !signalCheckboxes.some(key=>$('notifications-'+key).checked);
 }
 $('notifications-hostReports').onchange=notificationControls;
+for(const key of signalCheckboxes)$('notifications-'+key).onchange=notificationControls;
 async function loadNotifications() {
   if(notificationBusy)return;
   notificationBusy=true;notificationControls();
@@ -688,6 +725,8 @@ async function loadNotifications() {
     $('notifications-enabled').checked=data.enabled;$('notifications-recoveries').checked=data.recoveries;
     for(const key of ['hostReports','unhealthy','restarting','dead'])$('notifications-'+key).checked=data[key]!==false;
     $('notifications-delay').value=String(data.staleMinutes||2);$('notifications-priority').value=String(data.priority||4);
+    for(const key of signalCheckboxes)$('notifications-'+key).checked=data[key]===true;
+    for(const [key,fallback] of Object.entries(signalValues))$('notifications-'+key).value=String(data[key]??fallback);
     $('notification-delivery').textContent=data.lastError?'Delivery failed: '+data.lastError+'. Automatic alerts retry with backoff. Check ntfy access and the runtime token.':data.lastSuccessAt?'Last accepted by ntfy: '+new Date(data.lastSuccessAt).toLocaleString()+'.':'No notifications have been accepted yet.';
     $('notification-delivery').textContent+=' '+(data.lastSweepAt?'Last background check: '+new Date(data.lastSweepAt).toLocaleString()+'.':'No background check recorded. Configure a scheduled sweep for stale-host alerts.');
   }catch(error){notificationConfigured=false;setSubscription(null);$('notification-destination').textContent='Notification settings unavailable.';$('notification-message').textContent=error.message;}
@@ -695,7 +734,7 @@ async function loadNotifications() {
 }
 $('notification-form').onsubmit=async event=>{
   event.preventDefault();notificationBusy=true;notificationControls();$('notification-message').textContent='Saving…';
-  try{await mutate('/api/notifications','PATCH',{enabled:$('notifications-enabled').checked,recoveries:$('notifications-recoveries').checked,...Object.fromEntries(['hostReports','unhealthy','restarting','dead'].map(key=>[key,$('notifications-'+key).checked])),staleMinutes:Number($('notifications-delay').value),priority:Number($('notifications-priority').value)});$('notification-message').textContent='Settings saved. Changes apply to the whole fleet.';}
+  try{await mutate('/api/notifications','PATCH',{enabled:$('notifications-enabled').checked,recoveries:$('notifications-recoveries').checked,...Object.fromEntries(['hostReports','unhealthy','restarting','dead',...signalCheckboxes].map(key=>[key,$('notifications-'+key).checked])),...Object.fromEntries(Object.keys(signalValues).map(key=>[key,Number($('notifications-'+key).value)])),staleMinutes:Number($('notifications-delay').value),priority:Number($('notifications-priority').value)});$('notification-message').textContent='Settings saved. Changes apply to the whole fleet.';}
   catch(error){$('notification-message').textContent=error.message;}
   finally{notificationBusy=false;notificationControls();}
 };

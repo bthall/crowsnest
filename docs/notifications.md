@@ -17,21 +17,35 @@ For an authenticated server, a topic name is not a password. On a public server,
 - A host has not reported for more than the selected delay (two minutes by default).
 - A newly enrolled host has no first report after ten minutes.
 - A reported container is unhealthy, restarting, or dead.
+- An enabled CPU or memory rule stays above its threshold for the selected duration.
+- An enabled restart-burst rule observes enough new restarts within its rolling window.
 - A previously delivered issue clears, if recovery messages are enabled.
 
-Messages contain the host name and affected container names/state/health, with a link back to the private dashboard. They do not include logs, environment variables, reporting credentials, or publisher tokens. Exited containers are excluded because scheduled jobs often exit normally. Recoveries for missing containers say to check the dashboard rather than claiming they are healthy. Stale snapshots cannot produce container recovery messages.
+Messages contain the host name and affected container names/state/health or rule, with a link to that host. A message affecting one container opens its details; messages affecting several containers open the host. These links still require the owner's sign-in. A removed container leaves the host visible with an explanation. Messages do not include logs, environment variables, reporting credentials, or publisher tokens. Exited containers are excluded from health alerts because scheduled jobs often exit normally. Recoveries for missing containers say to check the dashboard rather than claiming they are healthy. Stale snapshots cannot produce container recovery messages.
 
 Previously delivered container alerts remain in the baseline while a host is stale. A fresh report resolves them or preserves them without repeating the original alert; the collector-report recovery is evaluated separately.
 
 Each host's changes are grouped into a message, limited to ten displayed changes and 3,500 UTF-8 bytes. Unchanged reports do not send repeated alerts. A changed destination starts a new baseline and can send currently active issues. Pausing stops automatic delivery; the explicit test remains available. Re-enabling compares current issues with the last delivered state.
 
-The Worker verifies ntfy's message acknowledgement before recording success. **Accepted by ntfy** does not prove delivery to a phone: subscriptions, mobile permissions, and ntfy push configuration still matter. A failed send preserves the transition for retry, with exponential backoff from 30 seconds up to 15 minutes. New reports and scheduled sweeps drive retries; superseded transitions are coalesced to current state. R2 state is not transactional: overlapping work or lost acknowledgements can duplicate a message. This is best-effort operational notification delivery, without an incident paging SLA.
+The Worker verifies ntfy's message acknowledgement before recording success. **Accepted by ntfy** does not prove delivery to a phone: subscriptions, mobile permissions, and ntfy push configuration still matter. A failed send preserves the transition for retry, with exponential backoff from 30 seconds up to 15 minutes. New reports and scheduled sweeps drive retries; superseded transitions are coalesced to current state. A short per-host conditional lease prevents simultaneous report/sweep sends. Lost acknowledgements or failures after publication can still duplicate a message. This is best-effort operational notification delivery, without an incident paging SLA.
 
 ## Notification policy
 
 In **Alerts → ntfy notifications**, choose which conditions to send: missing host reports, unhealthy, restarting, and dead containers. All are enabled by default. Choose a host delay of 2, 5, 10, or 15 minutes and an alert priority of Default, High (the default), or Urgent. Recovery messages keep default priority. These settings apply to the entire fleet, including hosts outside the selected group.
 
 The dashboard still marks reports stale after two minutes. Notification delay changes only when a stale-host message is sent; first-report warnings remain ten minutes after enrollment. Stale hosts retain delivered container baselines even when host-report alerts are disabled or delayed. Turning off a category silently removes its baseline without reporting a recovery. Re-enabling a category alerts on an issue still present. Existing saved settings inherit the original default policy.
+
+### Resource and restart rules
+
+Expand **Resource and restart rules** to opt in. These rules are disabled initially, including for upgraded instances, and apply to each container across the fleet. Collectors v0.10.0 or later already provide the required values; no reinstall is needed.
+
+- **CPU:** choose an integer percentage (default 150%). 100% uses one CPU core; multi-core containers can exceed 100%.
+- **Memory:** choose an absolute MiB threshold (default 1,024 MiB), independent of Docker's memory limit. Usage excludes reclaimable cache.
+- **Above threshold for:** choose 1, 5, 10, or 15 minutes (default 5). Fresh running-container readings must remain strictly above the threshold. A missing measurement, a gap over two minutes, a container replacement, maintenance, or a policy change starts a new observation window. Missing data preserves an already delivered alert instead of claiming recovery.
+- **Restart bursts:** choose 2–100 observed restarts (default 5) within 5, 10, 15, or 30 minutes (default 10). Crowsnest counts increases between fresh reports for the same full container ID. Its first lifetime counter is a baseline, never an inferred burst. A reset starts a new window. Restart recovery requires enough fresh observations to cover the window.
+- **Repeat-alert cooldown:** choose 5, 10, 15, 30, or 60 minutes (default 10). This limits a new alert after the same rule clears and recurs. A continuously active rule does not repeat. Recovery messages remain immediate when a fresh report establishes recovery, subject to the normal delivery backoff.
+
+Saving changed resource/restart thresholds or durations resets their observation windows and delivered baselines without sending a false recovery. Pausing fleet notifications or using maintenance also starts fresh observations. Current confirmed rules appear in the dashboard's Alerts view while notifications are enabled; stale snapshots cannot establish a new resource or burst alert. Observation state and delivery baselines are removed with their host.
 
 ## Per-host maintenance
 
@@ -89,4 +103,4 @@ Place the checker on an available host. A checker on a monitored host cannot det
 - **No phone alert after accepted test:** verify the server/topic subscription and subscriber access in ntfy, then notification permissions and self-hosted push configuration.
 - **No stale-host alert:** check that notifications are enabled and that background checks continue while the browser and collectors are silent.
 
-Network-mocked CI tests cover private routes, destination restrictions, secret exposure, transitions, recoveries, deduplication, retries, pausing, service sweeps, acknowledgements, test rate limiting, and host-removal cleanup. Live setup additionally requires an accepted test and an unattended sweep with persisted readback.
+Network-mocked CI tests cover private routes, destination restrictions, secret exposure, transitions, recoveries, deduplication, concurrent delivery, retries, pausing, resource timing, restart deltas/resets, missing data, cooldowns, service sweeps, acknowledgements, test rate limiting, and host-removal cleanup. Live setup additionally requires an accepted test and an unattended sweep with persisted readback.

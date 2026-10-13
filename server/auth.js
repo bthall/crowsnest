@@ -63,7 +63,9 @@ $('access-form').onsubmit = async event => {
     // Clear credentials before navigation; never put them in browser storage.
     $('access-password').value = '';
     $('access-code').value = '';
-    location.assign('/');
+    let destination='/';
+    try{const target=new URL(new URLSearchParams(location.search).get('next')||'/',location.origin);if(target.origin===location.origin && target.pathname==='/')destination=target.pathname+target.search;}catch{}
+    location.assign(destination);
   } catch (error) {
     $('access-message').textContent = error.name === 'TimeoutError' || error.name === 'TypeError' ? 'Unable to reach Crowsnest. Check your connection, then try again.' : error.message;
   } finally {

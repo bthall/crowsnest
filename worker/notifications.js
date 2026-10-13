@@ -10,7 +10,7 @@ function ntfyDestination(value) {
 }
 async function notificationSettings(env) {
   const object=await env.BUCKET.get('notifications/settings.json');
-  return {...{enabled:env.NTFY_ENABLED==='true',recoveries:true,hostReports:true,unhealthy:true,restarting:true,dead:true,staleMinutes:2,priority:4},...object?await object.json():{}};
+  return {...{enabled:env.NTFY_ENABLED==='true',recoveries:true,hostReports:true,unhealthy:true,restarting:true,dead:true,staleMinutes:2,priority:4},...SIGNAL_DEFAULTS,...object?await object.json():{}};
 }
 async function hostMaintenance(bucket,id) {
   const object=await bucket.get('maintenance/hosts/'+id+'.json');
@@ -37,14 +37,15 @@ function issueKinds(container) {
   return [...container.health==='unhealthy'?['unhealthy']:[],...['restarting','dead'].includes(container.state)?[container.state]:[]];
 }
 function deliveredIssueKinds(id,text,saved) {
+  if(signalKind(id))return [signalKind(id)];
   if(id==='report')return ['hostReports'];
   if(saved.kinds?.[id])return saved.kinds[id];
   const match=text.match(/: ([^/]+)\/([^/]+)$/);
   return match?issueKinds({state:match[1],health:match[2]}):[];
 }
-async function publishNtfy(env,destination,message,title,priority=3,alert=false) {
+async function publishNtfy(env,destination,message,title,priority=3,alert=false,target=null) {
   const authorization=env.NTFY_TOKEN?{Authorization:'Bearer '+env.NTFY_TOKEN}:{};
-  const click=dashboardOrigin(env.DASHBOARD_ORIGIN)||dashboardOrigin(env.SITE_ORIGIN);
+  const click=target || dashboardOrigin(env.DASHBOARD_ORIGIN)||dashboardOrigin(env.SITE_ORIGIN);
   let response;
   const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),5000);
   try {
@@ -69,6 +70,24 @@ async function publishNtfy(env,destination,message,title,priority=3,alert=false)
   }finally{clearTimeout(timer);}
 }
 async function notifyHost(env,host,snapshot,settings,now=Date.now()) {
+  if(!settings.enabled || !ntfyDestination(env.NTFY_URL))return {sent:0,pending:0};
+  // A conditional short lease prevents concurrent report/sweep deliveries.
+  const key='notifications/locks/'+host.id+'.json',owner=crypto.randomUUID();
+  let acquired=false;
+  for(let attempt=0;attempt<3;attempt++) {
+    const object=await env.BUCKET.get(key),lease=object?await object.json():{};
+    const leaseNow=Date.now();
+    if(lease.until>leaseNow)return {sent:0,pending:1};
+    if(await env.BUCKET.put(key,JSON.stringify({owner,until:leaseNow+15000}),{onlyIf:object?{etagMatches:object.etag}:{etagDoesNotMatch:'*'}})){acquired=true;break;}
+  }
+  if(!acquired)return {sent:0,pending:1};
+  try{return await notifyHostUnlocked(env,host,snapshot,settings,now);}
+  finally {
+    const object=await env.BUCKET.get(key);
+    if(object && (await object.json()).owner===owner)await env.BUCKET.put(key,JSON.stringify({until:0}),{onlyIf:{etagMatches:object.etag}});
+  }
+}
+async function notifyHostUnlocked(env,host,snapshot,settings,now=Date.now()) {
   const destination=ntfyDestination(env.NTFY_URL);
   if(!settings.enabled || !destination)return {sent:0,pending:0};
   const maintenance=await hostMaintenance(env.BUCKET,host.id);
@@ -80,29 +99,45 @@ async function notifyHost(env,host,snapshot,settings,now=Date.now()) {
   // A newly configured destination gets its own baseline.
   if(saved.destination!==destination.url){saved.delivered={};saved.destination=destination.url;saved.nextAttemptAt=0;saved.attempts=0;}
   if(saved.maintenanceRevision!==maintenance.revision){saved.nextAttemptAt=0;saved.attempts=0;saved.maintenanceRevision=maintenance.revision;}
+  const policy=signalPolicy(settings);
+  if(saved.signalPolicy!==policy){for(const id of Object.keys(saved.delivered))if(signalKind(id))delete saved.delivered[id];saved.cooldowns={};saved.signalPolicy=policy;}
   // Disabling an alert category silently retires its delivered baseline.
   // It must not announce that a problem recovered because the policy changed.
   for(const [id,text] of Object.entries(saved.delivered)) {
     const kinds=deliveredIssueKinds(id,text,saved);
     if(!kinds.length || !kinds.some(kind=>settings[kind]))delete saved.delivered[id];
   }
-  const current=notificationIssues(host,snapshot,now,settings), added=[], removed=[];
-  for(const [id,text] of Object.entries(current))if(saved.delivered[id]!==text)added.push(text);
-  for(const [id,text] of Object.entries(saved.delivered))if(!current[id])removed.push(id==='report'?(snapshot?'Collector reporting resumed':'Report warning cleared'):text.split(': ')[0]+': no longer in an alert state or no longer reported; check the dashboard');
+  const current=notificationIssues(host,snapshot,now,settings), added=[], removed=[],addedIds=[];
+  const observations=settings.cpuAlerts || settings.memoryAlerts || settings.restartBursts?await env.BUCKET.get('signals/'+host.id+'.json'):null;
+  const advanced=advancedIssues(snapshot,observations?await observations.json():null,settings);
+  Object.assign(current,advanced.issues);
+  for(const id of advanced.uncertain)if(saved.delivered[id])current[id]=saved.delivered[id];
+  const blocked=[];
+  for(const [id,text] of Object.entries(current))if(saved.delivered[id]!==text) {
+    if(signalKind(id) && (saved.cooldowns?.[id]||0)+settings.cooldownMinutes*60000>now)blocked.push(id);
+    else{added.push(text);addedIds.push(id);}
+  }
+  for(const [id,text] of Object.entries(saved.delivered))if(!current[id])removed.push(id==='report'?(snapshot?'Collector reporting resumed':'Report warning cleared'):text.split(': ')[0]+': '+(signalKind(id)?({cpu:'CPU',memory:'Memory',burst:'Restart burst'})[id.split(':')[0]]+' alert cleared on a fresh report':'no longer in an alert state or no longer reported; check the dashboard'));
   // Suppress stale container recovery messages while their host cannot report.
   const stale=!snapshot || now-Date.parse(snapshot.receivedAt)>120000;
   if(stale)removed.length=0;
   // Retain delivered container alerts until a fresh report can resolve them.
   const baseline=stale?{...saved.delivered,...current}:current;
+  for(const id of blocked)delete baseline[id];
   const kinds={...stale?saved.kinds||{}:{},...Object.fromEntries((snapshot?.containers||[]).filter(c=>current[c.id]).map(c=>[c.id,issueKinds(c)])),...current.report?{report:['hostReports']}: {}};
+  for(const id of Object.keys(current))if(signalKind(id))kinds[id]=[signalKind(id)];
   const lines=[...added.map(x=>'Alert: '+x),...(settings.recoveries?removed.map(x=>'Cleared: '+x):[])];
-  if(!lines.length){saved.delivered=baseline;saved.kinds=kinds;saved.attempts=0;await env.BUCKET.put(key,JSON.stringify(saved));return {sent:0,pending:0};}
+  if(!lines.length){saved.delivered=baseline;saved.kinds=kinds;saved.attempts=0;await env.BUCKET.put(key,JSON.stringify(saved));return {sent:0,pending:blocked.length?1:0};}
   if(saved.nextAttemptAt>now)return {sent:0,pending:1};
   let message=host.name+'\n'+lines.slice(0,10).map(x=>x.slice(0,280)).join('\n')+(lines.length>10?'\n'+(lines.length-10)+' more changes. Open Crowsnest for details.':'');
   while(new TextEncoder().encode(message).length>3500)message=message.slice(0,-1);
   try {
-    await publishNtfy(env,destination,message,'Crowsnest · '+host.name,added.length?settings.priority:3,added.length>0);
+    const targets=[...addedIds,...Object.keys(saved.delivered).filter(id=>!current[id])].map(id=>signalContainer(id)||(/^[a-f0-9]{64}$/.test(id)?id:null));
+    const container=targets.length && targets.every(id=>id && id===targets[0])?targets[0]:null;
+    await publishNtfy(env,destination,message,'Crowsnest · '+host.name,added.length?settings.priority:3,added.length>0,notificationLink(env,host.id,container));
     saved.delivered=baseline;saved.kinds=kinds;saved.attempts=0;saved.nextAttemptAt=now+30000;
+    saved.cooldowns=Object.fromEntries(Object.entries(saved.cooldowns||{}).filter(([,at])=>now-at<3600000));
+    for(const id of addedIds)if(signalKind(id))saved.cooldowns[id]=now;
     await env.BUCKET.put(key,JSON.stringify(saved));return {sent:1,pending:0};
   }catch {
     saved.attempts=Math.min((saved.attempts||0)+1,6);

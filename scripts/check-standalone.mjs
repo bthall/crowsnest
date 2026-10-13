@@ -48,6 +48,8 @@ try {
   assert.equal((await request('/api/hosts', {headers: {Host: 'attacker.example.com'}})).status, 421);
   const home = await request('/', {signed: false});
   assert.equal(home.status, 303); assert.equal(home.headers.get('location'), '/login');
+  const linked='/?host=00000000-0000-4000-8000-000000000000&container='+('a'.repeat(64));
+  assert.equal((await request(linked,{signed:false})).headers.get('location'),'/login?next='+encodeURIComponent(linked));
   assert.equal((await request('/login', {signed: false})).status, 200);
   assert.equal((await request('/assets/crowsnest-mark.png', {signed: false})).status, 200);
   assert.equal((await request('/assets/board.js', {signed: false})).status, 401);
@@ -61,6 +63,8 @@ try {
   const setCookie = enrolled.headers.get('set-cookie');
   for (const flag of ['__Host-crowsnest=', 'HttpOnly', 'SameSite=Strict', 'Secure', 'Path=/']) assert.ok(setCookie.includes(flag));
   cookie = setCookie.split(';')[0];
+  assert.equal((await request('/login?next='+encodeURIComponent(linked))).headers.get('location'),linked);
+  for(const next of ['https://attacker.example.com/','//attacker.example.com/','/\\attacker.example.com/','/api/hosts'])assert.equal((await request('/login?next='+encodeURIComponent(next))).headers.get('location'),'/');
   const owner = runtime.storage.db.prepare('SELECT * FROM owner').get();
   assert.notEqual(owner.password, password); assert.ok(owner.password.startsWith('scrypt$'));
   const session = runtime.storage.db.prepare('SELECT hash FROM sessions').get();

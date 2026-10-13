@@ -3,6 +3,18 @@
 Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 
+## [0.11.0] - 2026-10-13
+
+### Added
+
+- Opt-in sustained CPU/memory threshold alerts and observed restart-burst rules, with per-container cooldowns, recovery messages, and maintenance-aware observation windows.
+- Container resource charts and readings, keyed by full Docker ID and retaining at most 24 hours, 288 five-minute readings, and 2 MiB per host.
+- Notification links select the affected host and, for a single affected container, open its details. Standalone sign-in preserves these links without accepting external redirect targets.
+
+### Compatibility
+
+- Existing collectors already supply the measurements and restart counters. New rules start disabled; previous notification settings and existing host workload history remain supported.
+
 ## [0.10.0] - 2026-10-13
 
 ### Changed

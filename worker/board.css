@@ -53,6 +53,10 @@ textarea { width: 100%; background: #0f1821; color: var(--text); padding: 12px; 
 .notification-policy .checkbox-label { margin: 8px 0; }
 .notification-options { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 600px; }
 .notification-options label { font-size: 13px; }
+.notification-options input[type=number] { width: 100%; border-color: #68798a; }
+.notification-rules { margin: 24px 0; max-width: 600px; }
+.notification-rules > summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.notification-rules .notification-options { margin: 16px 0 24px; }
 @media (max-width: 700px) {
   .resource-history > summary { padding: 14px 16px; }
   .resource-current { display: block; margin: 5px 0 0 18px; }

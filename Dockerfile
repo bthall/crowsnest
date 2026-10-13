@@ -11,7 +11,7 @@ RUN node scripts/build-board.mjs --standalone
 
 FROM node:24-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20
 WORKDIR /app
-ENV NODE_ENV=production CROWSNEST_BIND=0.0.0.0 CROWSNEST_PORT=8080 CROWSNEST_DATA_DIR=/data
+ENV NODE_ENV=production NODE_OPTIONS=--max-old-space-size=192 CROWSNEST_BIND=0.0.0.0 CROWSNEST_PORT=8080 CROWSNEST_DATA_DIR=/data
 COPY --from=build --chown=node:node /app/node_modules node_modules
 COPY --from=build --chown=node:node /app/dist/server dist/server
 COPY --chown=node:node package.json LICENSE ./

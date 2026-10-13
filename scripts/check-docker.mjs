@@ -11,12 +11,13 @@ for (const key of ['DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_TLS', 'DOCKER_TLS_VE
 function docker(args, input, acceptFailure = false) {
   const result = spawnSync('docker', ['--host=unix:///var/run/docker.sock', ...args], {env: environment, input, encoding: 'utf8', timeout: 60000, maxBuffer: 1024 * 1024});
   if (result.error) throw result.error;
-  if (!acceptFailure) assert.equal(result.status, 0, result.stderr);
+  if (!acceptFailure) assert.equal(result.status, 0, (result.stdout + '\n' + result.stderr).slice(-6000));
   return result;
 }
 const probe = `
 import assert from 'node:assert/strict';
 import {request as httpRequest} from 'node:http';
+import {readFileSync} from 'node:fs';
 import {Storage} from './server/storage.mjs';
 import {Authentication} from './server/auth.mjs';
 const storage = new Storage('/data/crowsnest.sqlite');
@@ -37,14 +38,17 @@ try {
   let ready = false;
   for(let attempt = 0; attempt < 50; attempt++) { try { if((await request('/healthz')).status === 200) { ready = true; break; } } catch {} await new Promise(resolve => setTimeout(resolve, 100)); }
   assert.ok(ready, 'server readiness');
+  console.log('Image probe: ready (' + phase + ')');
   assert.equal((await request('/api/hosts', 'GET', undefined, {'oai-authenticated-user-id': 'spoofed'})).status, 401);
   const password = 'fictional-image-test-password';
   if(phase === 'fresh') {
     const code = await auth.issueCode();
     const setup = await request('/auth/setup', 'POST', {username: 'owner', password, code});
     assert.equal(setup.status, 200); cookie = setup.cookie;
+    console.log('Image probe: owner setup accepted');
     const result = await request('/api/hosts', 'POST', {name: 'image-test-host', format: 'setup'});
     assert.equal(result.status, 200);
+    console.log('Image probe: enrollment accepted');
     const enrollment = JSON.parse(result.text);
     const bytes = Buffer.from(enrollment.packageBase64, 'base64');
     let config;
@@ -57,6 +61,9 @@ try {
     assert.equal(config.serviceToken, undefined);
     cookie = '';
     assert.equal((await request('/api/ingest/'+enrollment.hostId, 'POST', {engineVersion: 'fixture', containers: []}, {Authorization: 'Bearer '+config.hostToken})).status,200);
+    const parallel = await Promise.all([request('/auth/login', 'POST', {username: 'owner', password}), request('/auth/login', 'POST', {username: 'owner', password})]);
+    assert.ok(parallel.every(result => result.status === 200), 'two password hashes fit within the deployment memory limit');
+    console.log('Image probe: concurrent sign-ins accepted');
   } else {
     const login = await request('/auth/login', 'POST', {username: 'owner', password});
     assert.equal(login.status,200); cookie = login.cookie;
@@ -64,6 +71,7 @@ try {
     assert.equal(hosts.length,1); assert.equal(hosts[0].name,'image-test-host'); assert.ok(hosts[0].snapshot);
   }
   console.log('Image check passed: '+phase);
+  try { console.log('Image peak memory bytes: '+readFileSync('/sys/fs/cgroup/memory.peak','utf8').trim()); } catch {}
 } finally { await storage.close(); }
 `;
 try {
@@ -85,6 +93,13 @@ try {
   docker(['start', name]);
   process.stdout.write(docker(['exec', '-i', '--env', 'CROWSNEST_CHECK_PHASE=restored', name, 'node', '--input-type=module'], probe).stdout);
   console.log('Docker checks passed: isolated unprivileged runtime, enrollment/reporting, restart, consistent backup, live-restore refusal, stopped restore');
+} catch (error) {
+  // Only this fictional, owned test container is inspected. No production logs or credentials.
+  const state = docker(['inspect', '--format', '{{json .State}}', name], undefined, true);
+  if (state.status === 0) console.error('Test container state: ' + state.stdout.trim());
+  const memory = docker(['exec', name, 'node', '--input-type=module', '-e', "import {readFileSync} from 'node:fs'; for(const key of ['memory.events','memory.current','memory.peak','memory.max']) {try {console.log(key+': '+readFileSync('/sys/fs/cgroup/'+key,'utf8').trim());}catch{}}"], undefined, true);
+  if (memory.status === 0) console.error('Test cgroup memory: ' + memory.stdout.trim());
+  throw error;
 } finally {
   docker(['rm', '--force', name], undefined, true);
   docker(['volume', 'rm', volume], undefined, true);

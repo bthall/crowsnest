@@ -9,6 +9,8 @@ Crowsnest runs as a single Docker Compose service with a persistent SQLite volum
 - At least 768 MiB available for the dashboard container. Password hashing uses approximately 128 MiB per attempt, with at most two concurrent hashes.
 - Access to this repository. It remains private until its owner publishes it.
 
+The image caps Node's managed heap at 192 MiB to leave headroom for native password hashing, SQLite, buffers, and diagnostic commands within the container's 768 MiB limit.
+
 The Compose file binds the dashboard to `127.0.0.1:8080`. Use a reverse proxy on that host, or explicitly configure a private Docker network for a containerized proxy. Do not expose the backend port publicly.
 
 ## Install

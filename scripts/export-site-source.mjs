@@ -20,6 +20,7 @@ const files = [
   'scripts/check-resilience.mjs', 'scripts/test-storage.mjs',
   'scripts/check-standalone.mjs', 'scripts/check-docker.mjs',
   'scripts/check-secret-scanner.mjs',
+  'scripts/check-release.mjs', 'scripts/release.mjs', 'compose.yaml', 'CHANGELOG.md',
   'scripts/check-notifier.py', 'notifier/notifier.py', 'notifier/compose.yaml',
   'scripts/check-secrets.mjs', 'scripts/run-checks.mjs',
   'worker/index.js', 'worker/board.html', 'worker/board.js', 'worker/board.css',

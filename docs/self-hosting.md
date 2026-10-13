@@ -13,6 +13,10 @@ The Compose file binds the dashboard to `127.0.0.1:8080`. Use a reverse proxy on
 
 ## Install
 
+When a versioned release is available, use its deployment archive from [GitHub Releases](https://github.com/bthall/crowsnest/releases). It contains a Compose file pinned to the tested multi-platform image digest, an empty configuration example, instructions, and the MIT license. Verify the accompanying `SHA256SUMS` before extracting. While the repository and registry remain private, repository access and GHCR read authentication are required. Public publication is an owner decision.
+
+The source-build path below remains available and requires access to this repository.
+
 Create a directory under `/srv/docker` owned by your normal user, then clone the repository there. For example:
 
 ```bash

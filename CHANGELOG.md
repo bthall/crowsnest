@@ -7,6 +7,8 @@ Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 
 ### Added
 
+- CI-gated amd64/arm64 release automation with immutable version images, digest-pinned deployment archives, SPDX SBOMs, and build provenance.
+
 - Standalone Docker Compose deployment with one owner account and durable SQLite storage, independent of ChatGPT Sites.
 - Server-issued, single-use setup and recovery codes, scrypt password hashing, hashed browser sessions, same-origin writes, and persistent sign-in rate limits.
 - Transactional standalone host changes and automatic notification checks outside report transactions.

@@ -76,9 +76,10 @@ function tar(files) {
 }
 function collectorReady(env) {
   const origin=dashboardOrigin(env.SITE_ORIGIN);
+  if(env.AUTH_MODE==='standalone')return !!origin;
   return !!origin && !new URL(origin).port && typeof env.COLLECTOR_SERVICE_TOKEN==='string' && /^[\x21-\x7e]{1,8192}$/.test(env.COLLECTOR_SERVICE_TOKEN);
 }
-function collectorConfig(env,id,token) {return {url:dashboardOrigin(env.SITE_ORIGIN),hostId:id,hostToken:token,serviceToken:env.COLLECTOR_SERVICE_TOKEN};}
+function collectorConfig(env,id,token) {return {url:dashboardOrigin(env.SITE_ORIGIN),hostId:id,hostToken:token,...env.AUTH_MODE!=='standalone'?{serviceToken:env.COLLECTOR_SERVICE_TOKEN}:{}};}
 function collectorDownload(config,format='compose') {
   const downloadHeaders={...headers,'X-Crowsnest-Host-Id':config.hostId};
   if(format==='config')return new Response(JSON.stringify(config,null,2)+'\n',{headers:{...downloadHeaders,'Content-Type':'application/json','Content-Disposition':'attachment; filename="collector.json"'}});
@@ -153,13 +154,13 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
       if(path==='/api/notifications' && request.method==='PATCH') {
         let data;try{data=await readJson(request,1024);}catch{return json({error:'Invalid settings'},400);}
         if(typeof data.enabled!=='boolean' || typeof data.recoveries!=='boolean' || Object.keys(data).some(k=>!['enabled','recoveries'].includes(k)))return json({error:'Choose notification and recovery settings'},400);
-        if(data.enabled && !ntfyDestination(env.NTFY_URL))return json({error:'Configure NTFY_URL in the Site runtime first'},409);
+        if(data.enabled && !ntfyDestination(env.NTFY_URL))return json({error:'Configure NTFY_URL in the Crowsnest runtime first'},409);
         await env.BUCKET.put('notifications/settings.json',JSON.stringify({enabled:data.enabled,recoveries:data.recoveries}));
         return json(await notificationStatus(env));
       }
       if(path==='/api/notifications/test' && request.method==='POST') {
         const destination=ntfyDestination(env.NTFY_URL);
-        if(!destination)return json({error:'Configure NTFY_URL in the Site runtime first'},409);
+        if(!destination)return json({error:'Configure NTFY_URL in the Crowsnest runtime first'},409);
         const obj=await env.BUCKET.get('notifications/test.json'), prior=obj?await obj.json():{};
         if(Date.now()-Date.parse(prior.at)<60000)return json({error:'Wait one minute before sending another test'},429);
         await env.BUCKET.put('notifications/test.json',JSON.stringify({at:new Date().toISOString()}));
@@ -193,7 +194,7 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
       // Optional history failures must not turn a delivered report into an ingestion failure.
       try {await recordHistory(env.BUCKET,host.id,[...reportEvents(previous?await previous.json():null,report),...(replacement?[event('credentials','Reporting token replaced',report.receivedAt)]:[])]);}catch{console.error('History write failed');}
       const notify=async()=>{try{await notifyHost(env,host,report,await notificationSettings(env));}catch{console.error('Notification processing failed');}};
-      if(ctx?.waitUntil)ctx.waitUntil(notify());else await notify();
+      if(!env.DEFER_NOTIFICATIONS){if(ctx?.waitUntil)ctx.waitUntil(notify());else await notify();}
       return json({ok:true,receivedAt:report.receivedAt});
     }
     if(path==='/assets/crowsnest-mark.png' && request.method==='GET')return new Response(Uint8Array.from(atob(LOGO),c=>c.charCodeAt(0)),{headers:{...headers,'Content-Type':'image/png','Cache-Control':'private, max-age=86400'}});

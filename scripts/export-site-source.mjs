@@ -18,6 +18,7 @@ const files = [
   'scripts/check-maintenance.mjs', 'scripts/check-collector.py',
   'scripts/check-details.mjs',
   'scripts/check-resilience.mjs', 'scripts/test-storage.mjs',
+  'scripts/check-standalone.mjs', 'scripts/check-docker.mjs',
   'scripts/check-secret-scanner.mjs',
   'scripts/check-notifier.py', 'notifier/notifier.py', 'notifier/compose.yaml',
   'scripts/check-secrets.mjs', 'scripts/run-checks.mjs',
@@ -26,6 +27,9 @@ const files = [
   'worker/versions.js',
   'worker/collector.py', 'worker/proxy.cfg', 'worker/compose.yaml', 'worker/setup.sh',
   'worker/assets/crowsnest-mark.png', 'worker/assets/README.md',
+  'LICENSE', 'server/storage.mjs', 'server/auth.mjs', 'server/config.mjs',
+  'server/runtime.mjs', 'server/index.mjs', 'server/cli.mjs', 'server/lock.mjs',
+  'server/auth.html', 'server/auth.js', 'server/auth.css',
 ];
 await mkdir(dirname(target), {recursive: true});
 await mkdir(target); // Refuse to overwrite an existing export.

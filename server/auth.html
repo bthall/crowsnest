@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Crowsnest · Sign in</title>
+  <link rel="icon" type="image/png" href="/assets/crowsnest-mark.png">
+  <link rel="stylesheet" href="/assets/board.css">
+  <link rel="stylesheet" href="/assets/auth.css">
+  <script src="/assets/auth.js" defer></script>
+</head>
+<body class="access-page">
+  <main class="access-layout">
+    <div class="access-introduction">
+      <div class="brand"><img src="/assets/crowsnest-mark.png" alt="" width="64" height="64"><span class="wordmark"><strong>Crowsnest</strong><span>Your fleet. In sight.</span></span></div>
+      <p>One place to keep an eye on your Docker hosts.</p>
+      <p class="access-private">This instance is private. Only its owner can view the fleet.</p>
+    </div>
+    <section class="access-form" aria-labelledby="access-title" aria-busy="true">
+      <h1 id="access-title">Connecting…</h1>
+      <p id="access-description">Checking this instance.</p>
+      <form id="access-form" hidden>
+        <div id="code-field" hidden><label for="access-code">Server code</label><input id="access-code" name="code" type="password" autocomplete="one-time-code" spellcheck="false" maxlength="128" aria-describedby="code-help"><p id="code-help" class="input-help">Valid for 15 minutes. Generate it on the server using the command below.</p></div>
+        <label for="access-username">Username</label><input id="access-username" name="username" autocomplete="username" required minlength="3" maxlength="64" autocapitalize="none" spellcheck="false" pattern="[a-zA-Z0-9][a-zA-Z0-9.@_-]{2,63}">
+        <label for="access-password">Password</label><input id="access-password" name="password" type="password" autocomplete="current-password" required maxlength="128" aria-describedby="password-help"><p id="password-help" class="input-help" hidden>Use 12–128 characters. A password manager works well.</p>
+        <button id="access-submit" class="primary" type="submit">Sign in</button>
+      </form>
+      <p id="access-message" class="access-message" role="status" aria-live="polite"></p>
+      <button id="access-retry" class="secondary" type="button" hidden>Retry connection</button>
+      <details id="server-code-help" hidden><summary>Generate a server code</summary><p>In your Crowsnest project directory, run:</p><pre><code id="server-code-command">docker compose exec crowsnest node server/cli.mjs setup-token</code></pre><p>Copy the private code from the terminal into this form. A new code replaces the previous one.</p></details>
+      <button id="access-recovery" class="access-text-button" type="button" hidden>Forgot your password?</button>
+      <button id="access-back" class="access-text-button" type="button" hidden>Back to sign in</button>
+      <noscript><p>Enable JavaScript to sign in to Crowsnest.</p></noscript>
+    </section>
+  </main>
+</body>
+</html>

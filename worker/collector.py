@@ -27,13 +27,14 @@ def check_config(config):
     if not isinstance(config.get('url'), str):
         raise ValueError('Invalid private Site destination')
     url = urllib.parse.urlsplit(config['url'])
+    port = url.port  # Validate the port even when no platform credential is present.
     if (url.scheme != 'https' or not url.hostname or url.username or url.password
-            or url.port not in (None, 443) or url.path not in ('', '/')
+            or ('serviceToken' in config and port not in (None, 443)) or url.path not in ('', '/')
             or url.query or url.fragment
             or not isinstance(config.get('hostId'), str)
             or not re.fullmatch(r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}', config['hostId'])):
         raise ValueError('Invalid private Site destination')
-    for key in ('hostToken', 'serviceToken'):
+    for key in ('hostToken',) + (('serviceToken',) if 'serviceToken' in config else ()):
         value = config.get(key)
         if not isinstance(value, str) or not re.fullmatch(r'[\x21-\x7e]{1,8192}', value):
             raise ValueError('Invalid reporting credentials')
@@ -111,7 +112,7 @@ def report(config, opener):
         raise ValueError('Report exceeds the dashboard limit')
     request = urllib.request.Request(endpoint, data=body, headers={
         'Content-Type': 'application/json',
-        'OAI-Sites-Authorization': 'Bearer ' + config['serviceToken'],
+        **({'OAI-Sites-Authorization': 'Bearer ' + config['serviceToken']} if 'serviceToken' in config else {}),
         'Authorization': 'Bearer ' + config['hostToken']
     }, method='POST')
     with opener.open(request, timeout=20) as response:

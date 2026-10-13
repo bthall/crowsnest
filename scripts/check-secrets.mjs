@@ -12,8 +12,13 @@ const patterns=[
   /\bBearer\s+[A-Za-z0-9_.-]{32,}/,
   /\btk_[A-Za-z0-9]{30,}\b/,
 ];
-const credentialAssignment=/\b(?:hostToken|serviceToken|COLLECTOR_SERVICE_TOKEN|NTFY_TOKEN|api[_-]?key|password|client[_-]?secret|access[_-]?token)["']?\s*[:=]\s*["']([^"'\r\n]+)["']/gi;
+const credentialName='(?:hostToken|serviceToken|COLLECTOR_SERVICE_TOKEN|NTFY_TOKEN|api[_-]?key|password|client[_-]?secret|access[_-]?token)';
+const credentialAssignment=new RegExp('(?:\\b'+credentialName+'\\s*=\\s*|(?:["\\\']'+credentialName+'["\\\']|(?<![\\w"\\\'-])'+credentialName+')\\s*:\\s*)["\\\']([^"\\\'\\r\\n]+)["\\\']','gi');
 const synthetic=new Set(['test-service-token','test-host-token','test-ntfy-token','test-token','example-token']);
+const authFixtures=new Map([
+  ['scripts/check-standalone.mjs',new Set(['fictional-owner-password-for-tests','incorrect-test-password','x'])],
+  ['scripts/check-docker.mjs',new Set(['fictional-image-test-password'])],
+]);
 const findings=new Set();
 function check(name,buffer,history=false) {
   const label=name+(history?' (history)':'');
@@ -23,7 +28,7 @@ function check(name,buffer,history=false) {
   const text=buffer.toString('utf8');
   if(patterns.some(pattern=>pattern.test(text)))findings.add(label+' (credential pattern)');
   for(const match of text.matchAll(credentialAssignment)) {
-    if(!synthetic.has(match[1])&&!/^<[^>]+>$/.test(match[1]))findings.add(label+' (literal credential assignment)');
+    if(!synthetic.has(match[1])&&!authFixtures.get(name)?.has(match[1])&&!/^<[^>]+>$/.test(match[1]))findings.add(label+' (literal credential assignment)');
   }
 }
 const files=git(['ls-files','-z']).toString('utf8').split('\0').filter(Boolean);

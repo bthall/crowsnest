@@ -8,6 +8,14 @@ let refreshPromise = null;
 let availableCollectorVersion = null, collectorUpdateTarget = null, collectorUpdateRequestedAt = 0, collectorUpdatePreviousVersion = null, collectorUpdateBusy = false;
 let detailSelection = null, detailEvents = [], detailHistoryError = '', detailHistoryLoading = false, detailHistorySequence = 0, detailHistoryController = null, detailLegacyMatches = false;
 const $ = id => document.getElementById(id);
+if(document.body.dataset.authMode==='standalone'){
+  $('sign-out').hidden=false;
+  $('sign-out').onclick=async()=>{
+    $('sign-out').disabled=true;
+    try{const response=await fetch('/auth/logout',{method:'POST',signal:AbortSignal.timeout(10000)});if(!response.ok)throw new Error();location.assign('/login');}
+    catch{$('notice').hidden=false;$('notice').textContent='Unable to sign out. Check your connection and try again.';$('sign-out').disabled=false;}
+  };
+}
 const age = iso => Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 1000));
 const needsAttention = c => c.health === 'unhealthy' || ['restarting', 'dead'].includes(c.state);
 const inMaintenance = h => Date.parse(h?.maintenanceUntil) > Date.now();

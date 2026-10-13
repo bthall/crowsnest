@@ -8,6 +8,10 @@ Crowsnest is in initial development. Reports should identify the current `main` 
 
 ## Security boundaries
 
+Standalone deployment supports one owner per instance. Setup and recovery require single-use, hashed server codes with 15-minute expiries; there is no default password or public first-user claim. Passwords use salted scrypt (N=131072, r=8, p=1). Sessions use random 256-bit tokens stored as SHA-256 hashes, expire after eight hours, and are revoked by logout, recovery, or restore. HTTPS cookies are HttpOnly, Secure, SameSite=Strict, and scoped to `/`. Persistent rate limits and a two-hash concurrency cap bound sign-in work. The standalone boundary removes supplied platform identity headers and enforces the configured Host and Origin. Its collectors use only individual reporting tokens. Keep the data volume and backups private.
+
+The following platform boundary applies to Sites:
+
 ChatGPT Sites enforces access to the private dashboard. Worker viewer routes require the platform authenticated-user header, and host registration validates same-origin requests. Preserve the existing owner-only access policy when deploying changes.
 
 A collector uses two credentials: a platform service credential to reach the private Site and a host-specific reporting token. The Worker stores the host token as a SHA-256 hash. Possession of the service credential is privileged; keep all collector configuration private.
@@ -37,4 +41,8 @@ Activity records describe recent operational changes and exclude credentials. Th
 
 The existing platform service credential can authorize only notification sweeps and rate-limited tests in addition to its dispatch role. A sweep cannot register hosts, change notification settings, or read the dashboard. Collector holders therefore can trigger bounded notifications; treat this shared service credential as privileged. R2 transition state is not transactional, so overlapping reports/sweeps can duplicate a message. Delivery is best effort, not an incident paging SLA.
 
-The dashboard serves JavaScript and CSS as authenticated assets and blocks inline scripts and styles with CSP. External container fields render as text through DOM APIs. Separate owners should deploy separate private Sites; the current host collection has one Site-level owner boundary.
+The dashboard blocks inline scripts and styles with CSP. Standalone login scripts, shared CSS, and the logo are public static assets; fleet scripts and APIs require a session. Sites assets remain authenticated. External container fields render as text through DOM APIs. Separate owners should deploy separate instances or private Sites.
+
+Standalone host mutations use SQLite transactions; notification publication remains best effort and can finish after maintenance or removal starts. Backups contain private state and must not be committed. Restore requires a stopped server, checks integrity/schema, and invalidates browser sessions and server codes. Reporting tokens changed after a backup may need replacement.
+
+The Docker runtime runs as the Node user with a read-only root filesystem, dropped capabilities, and no Docker socket mount. Image builds apply OS security updates and remove npm tooling. CI scans images with digest-pinned Trivy and fails on fixable high/critical vulnerabilities. Triage unfixed and lower-severity findings separately.

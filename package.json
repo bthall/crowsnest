@@ -1,8 +1,8 @@
 {
   "name": "crowsnest",
-  "version": "0.7.2",
+  "version": "0.8.0",
   "private": true,
-  "description": "Private Docker dashboard with a restricted outbound collector for each host.",
+  "description": "Private Docker fleet monitoring with outbound collectors and standalone deployment.",
   "type": "module",
   "engines": {
     "node": ">=22.13.0"
@@ -12,6 +12,12 @@
     "test": "node scripts/run-checks.mjs",
     "check": "npm run build && npm test",
     "preview": "node scripts/preview.mjs",
-    "export:site": "node scripts/export-site-source.mjs"
-  }
+    "export:site": "node scripts/export-site-source.mjs",
+    "start": "node server/index.mjs",
+    "test:standalone": "node scripts/check-standalone.mjs"
+  },
+  "dependencies": {
+    "better-sqlite3": "13.0.3"
+  },
+  "license": "MIT"
 }

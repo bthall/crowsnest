@@ -1,6 +1,6 @@
 # Development
 
-Use Node.js 22.13 or newer, Bash, Git, and Python 3 on Linux. There are no npm dependencies. Docker is required to run a collector or perform a live integration check, but the automated tests use a Docker command double.
+Use Node.js 22.13 or newer, Bash, Git, Linux `flock`, and Python 3 on Linux. The Worker has no runtime npm dependencies; the standalone server uses pinned `better-sqlite3`. Docker is required for the container integration suite and live collector checks. Installer tests use a Docker command double.
 
 ```bash
 npm ci --ignore-scripts --no-audit --no-fund
@@ -32,8 +32,10 @@ Playwright is a development tool supplied by the Codex Playwright skill; it is n
 
 ## Security scans
 
-Gitleaks 8.30.1 is pinned by release checksum in `.github/workflows/security.yml`. It scans all Git refs with credential output redacted. Semgrep 1.180.0 is pinned by image digest; it runs without network access using `.semgrep.yml`. The six rules prohibit dynamic code evaluation, HTML injection sinks, shell execution in application code, disabled collector TLS verification, and privileged collector containers. These focused rules supplement the API security regression checks and manual review; they are not a full vulnerability assessment or container-image CVE scan.
+The standalone HTTP/SQLite suite checks authentication, spoofed identity, Host/Origin checks, secure cookies, setup/recovery, session invalidation, rate limits, concurrent registration, transaction isolation, restart persistence, and backup/restore. The Docker job builds the image and runs `node scripts/check-docker.mjs <image>` in a networkless container without a Docker socket mount. It verifies enrollment/reporting, restart, online backup, live-restore refusal, and stopped restore, then removes temporary containers and volumes.
 
-Actions use immutable commit SHAs, checkout credentials are not persisted, workflows have read-only permissions, and Dependabot proposes GitHub Actions updates. Review scanner releases and refresh their version/hash together. `npm audit --audit-level=high` checks package metadata; the production Worker currently has no npm dependencies.
+Gitleaks 8.30.1 is pinned by release checksum in `.github/workflows/security.yml`. It scans all Git refs with credential output redacted. Semgrep 1.180.0 is pinned by image digest; it runs without network access using `.semgrep.yml`. The six rules prohibit dynamic code evaluation, HTML injection sinks, shell execution in hosted application code, disabled collector TLS verification, and privileged collector containers. These focused rules supplement the API security regression checks and manual review; they are not a full vulnerability assessment. A separate digest-pinned Trivy job scans an exported image without mounting the Docker socket and fails on fixable high/critical findings.
+
+Actions use immutable commit SHAs, checkout credentials are not persisted, workflows have read-only permissions, and Dependabot proposes GitHub Actions, npm, and Docker updates. Review scanner releases and refresh their version/hash together. `npm audit --audit-level=high` checks package metadata; the Worker has no runtime npm dependencies; the standalone dependency is pinned.
 
 CI runs checks only and has no deployment credentials. Read-only workflow files alone do not enforce branch protection. Set required-check rules where supported.

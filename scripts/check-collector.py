@@ -88,6 +88,14 @@ class CollectorChecks(unittest.TestCase):
                 collector.check_config({**CONFIG, key: value})
         self.assertEqual(collector.check_config({**CONFIG, 'url': CONFIG['url'] + '/'}), collector.check_config(CONFIG))
 
+    def test_standalone_configuration_uses_host_credentials_only(self):
+        config = {key: value for key, value in CONFIG.items() if key != 'serviceToken'}
+        config['url'] = 'https://board.example.com:8443'
+        self.assertEqual(collector.check_config(config), config['url'] + '/api/ingest/' + config['hostId'])
+        for url in ['http://board.example.com', 'https://board.example.com:99999', 'https://user:pass@board.example.com']:
+            with self.subTest(url=url), self.assertRaises(ValueError):
+                collector.check_config({**config, 'url': url})
+
     def test_disappearing_container_does_not_stop_report(self):
         def get(path, deadline):
             if path.endswith('/containers/json?all=1'):

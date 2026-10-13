@@ -1,12 +1,16 @@
 # Architecture
 
-The dashboard is a dependency-free Cloudflare Worker hosted through ChatGPT Sites. The page lists registered Docker hosts and their latest container reports. It polls every 15 seconds and marks reports stale after two minutes.
+The dashboard uses a shared Worker-compatible application, running either on ChatGPT Sites with R2 or in a standalone Node server with SQLite. It polls every 15 seconds and marks reports stale after two minutes.
 
 Each host runs a Python collector and an HAProxy socket proxy in Docker Compose. The proxy exposes only Docker version, container list, and container inspection reads over an internal Docker network. It denies other endpoints and methods. The collector has outbound HTTPS access and sends a report every 30 seconds. Neither service publishes ports.
 
 Reports include container name, image, state, health, restart count, timestamps, Docker Engine version, optional collector version, and optional Compose project/service names. Only `com.docker.compose.project` and `com.docker.compose.service` are read from labels; arbitrary labels, environment variables, logs, mounts, and network addresses are not sent. Cloudflare R2 holds registrations, latest reports, bounded activity, maintenance timers, and notification state. The dashboard does not control application containers.
 
 ## Authentication
+
+Standalone deployments authenticate one owner through an HttpOnly browser session. The HTTP boundary strips supplied platform identity headers and injects identity only after verifying its own session. HTTPS origins use Secure, SameSite=Strict cookies; loopback development uses a separate cookie name. Passwords use salted scrypt, and random session/setup/recovery values are stored only as hashes. Setup and recovery require a server-issued code, expire after 15 minutes, and are single-use. Writes require the configured origin; forwarded identity and IP headers are not trusted. See [self-hosting](self-hosting.md). Standalone collectors use only individual reporting tokens.
+
+The following platform boundary applies to Sites:
 
 ChatGPT Sites enforces the existing owner-only access policy. Dashboard routes additionally require the platform authenticated-user header. Registration checks that the browser Origin matches the request URL origin, supporting both generated and custom domains.
 
@@ -32,6 +36,9 @@ Per-host maintenance is stored separately from registration records so timer wri
 
 ## Source layout
 
+- `server/`: standalone HTTP boundary, owner UI, authentication, SQLite adapter, CLI, and process lock.
+- `Dockerfile`, `compose.yaml`: standalone dashboard build and deployment.
+
 - `worker/notifications.js`: server-side ntfy transitions, acknowledgements, retry state, and sweeps.
 - `notifier/`: optional standard-library Python runner and restricted Compose deployment for minute sweeps.
 - `worker/index.js`: routes, registration, report validation, and installer generation.
@@ -46,6 +53,8 @@ Per-host maintenance is stored separately from registration records so timer wri
 
 ## Publishing
 
-GitHub tracks reviewed source. Hosting remains managed by ChatGPT Sites; a push to this GitHub repository does not deploy the dashboard. Site publishing must synchronize the selected source with the existing Site repository and publish its matching artifact through the Sites workflow. Preserve the existing Site ID and access policy.
+Standalone deployments rebuild their Compose image deliberately and retain their data volume; a source push does not update a running dashboard. SQLite host mutations use serialized transactions with WAL and full synchronous commits. Operations outside an active transaction wait outside it; automatic alert checks run separately. A kernel process lock excludes another server or restore. One process per data volume is supported. Hosted publishing follows the separate process below.
+
+For hosted deployments, GitHub tracks reviewed source and hosting remains managed by ChatGPT Sites; a push to this GitHub repository does not deploy the dashboard. Site publishing must synchronize the selected source with the existing Site repository and publish its matching artifact through the Sites workflow. Preserve the existing Site ID and access policy.
 
 Separate deployments use the clean source export described in [ChatGPT Sites setup](chatgpt-sites.md). Each deployment has independent storage and service access.

@@ -3,6 +3,21 @@
 Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 
+## [0.8.0] - 2026-10-13
+
+### Added
+
+- Standalone Docker Compose deployment with one owner account and durable SQLite storage, independent of ChatGPT Sites.
+- Server-issued, single-use setup and recovery codes, scrypt password hashing, hashed browser sessions, same-origin writes, and persistent sign-in rate limits.
+- Transactional standalone host changes and automatic notification checks outside report transactions.
+- Consistent online backups, stopped-server restore, readiness checks, diagnostics, and a kernel process lock released on crashes and restarts.
+- Branded owner setup, sign-in, password recovery, and sign-out controls.
+- MIT license and a self-hosting guide covering HTTPS, private files, updates, backup, and recovery.
+
+### Compatibility
+
+- Existing private Sites deployments and collectors retain their authentication and configuration. Standalone collectors omit the platform service token and support custom HTTPS ports. Existing collectors remain accepted; no reinstall is required for the dashboard update.
+
 ## [0.7.2] - 2026-10-12
 
 ### Fixed

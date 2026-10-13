@@ -20,6 +20,9 @@ try {
   check('settings.json',JSON.stringify({serviceToken:candidate}),true);
   check('settings.py',"config = {'hostToken': '"+candidate+"'}",true);
   check('settings.sh','COLLECTOR_SERVICE_TOKEN="'+candidate+'"',true);
+  check('settings.js','const '+['pass','word'].join('')+' = '+JSON.stringify(candidate),true);
+  check('settings.json',JSON.stringify({password:['fictional','owner','password','for','tests'].join('-')}),true);
+  check('labels.js',"const title = recovery ? 'Reset your password' : 'Welcome back';",false);
   check('settings.json',JSON.stringify({serviceToken:'example-token'}),false);
   check('collector.json','{}',true);
   check('.env','DEMO=example',true);

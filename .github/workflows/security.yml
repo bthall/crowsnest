@@ -49,3 +49,21 @@ jobs:
             --entrypoint semgrep \
             semgrep/semgrep@sha256:529ee8a277ec8adc5b534d7c74eea0a47e9de21d62852b6ba7ac6ba9566845c3 \
             scan --config /src/.semgrep.yml --error --metrics off --disable-version-check
+  container-vulnerabilities:
+    name: Container vulnerabilities
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: docker build --tag crowsnest:security .
+      - name: Export image without exposing the Docker socket to the scanner
+        run: docker save crowsnest:security --output "$RUNNER_TEMP/crowsnest-image.tar"
+      - name: Fail on fixable high and critical vulnerabilities
+        run: |
+          docker run --rm \
+            --volume "$RUNNER_TEMP/crowsnest-image.tar:/image.tar:ro" \
+            aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa \
+            image --input /image.tar --scanners vuln --severity HIGH,CRITICAL \
+            --ignore-unfixed --exit-code 1 --no-progress

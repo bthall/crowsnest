@@ -1,0 +1,16 @@
+*
+!Dockerfile
+!package.json
+!package-lock.json
+!LICENSE
+!scripts/
+!scripts/build-board.mjs
+!worker/
+!worker/**
+!server/
+!server/**
+**/node_modules
+**/.env
+**/collector*.json
+**/*.sqlite*
+**/__pycache__

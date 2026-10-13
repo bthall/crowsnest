@@ -19,9 +19,12 @@ export class Storage {
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('synchronous = FULL');
     this.db.pragma('foreign_keys = ON');
-    const version = this.db.pragma('user_version', {simple: true});
-    if (version > 1) throw new Error('Database schema is newer than this server');
-    if (version === 0) this.db.transaction(() => {
+    // Acquire the write lock before reading the schema version: a CLI and server
+    // can open the same fresh database while either is still initializing it.
+    this.db.transaction(() => {
+      const version = this.db.pragma('user_version', {simple: true});
+      if (version > 1) throw new Error('Database schema is newer than this server');
+      if (version !== 0) return;
       this.db.exec(`
         CREATE TABLE objects (key TEXT PRIMARY KEY, value TEXT NOT NULL, etag TEXT NOT NULL) STRICT;
         CREATE TABLE owner (id INTEGER PRIMARY KEY CHECK (id = 1), username TEXT NOT NULL, password TEXT NOT NULL) STRICT;
@@ -31,7 +34,7 @@ export class Storage {
         CREATE TABLE limits (key TEXT PRIMARY KEY, start INTEGER NOT NULL, count INTEGER NOT NULL) STRICT;
       `);
       this.db.pragma('user_version = 1');
-    })();
+    }).immediate();
     this.statements = {
       get: this.db.prepare('SELECT value, etag FROM objects WHERE key = ?'),
       put: this.db.prepare('INSERT INTO objects(key, value, etag) VALUES(?, ?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, etag=excluded.etag'),

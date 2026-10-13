@@ -3,6 +3,8 @@ import {mkdtemp, readFile, rm, stat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {spawnSync} from 'node:child_process';
+import {Worker} from 'node:worker_threads';
+import Database from 'better-sqlite3';
 import {request as httpRequest} from 'node:http';
 import {createRuntime} from '../server/runtime.mjs';
 import {configuration} from '../server/config.mjs';
@@ -41,6 +43,40 @@ function cli(args) {
 const password = 'fictional-owner-password-for-tests';
 try {
   for (const url of ['http://fleet.example.com', 'https://user:pass@example.com', 'https://example.com/path', 'https://example.com/?token=test']) assert.throws(() => configuration({CROWSNEST_PUBLIC_URL: url}));
+  // Two connections reach initialization while another holds the write lock.
+  // A version read outside the migration transaction would let both see zero.
+  const filename=join(directory,'concurrent-init.sqlite'),barrier=new Int32Array(new SharedArrayBuffer(8));
+  const lock=new Database(filename);lock.pragma('journal_mode = WAL');lock.exec('BEGIN IMMEDIATE');
+  const workerSource=`
+    import {parentPort,workerData} from 'node:worker_threads';
+    import {createRequire} from 'node:module';
+    import {Storage} from ${JSON.stringify(new URL('../server/storage.mjs',import.meta.url).href)};
+    const Database=createRequire(${JSON.stringify(import.meta.url)})('better-sqlite3');
+    const pragma=Database.prototype.pragma,barrier=new Int32Array(workerData.barrier);
+    Database.prototype.pragma=function(...args){
+      const result=pragma.apply(this,args);
+      if(args[0]==='foreign_keys = ON'){parentPort.postMessage('ready');Atomics.wait(barrier,1,0);}
+      return result;
+    };
+    const storage=new Storage(workerData.filename);await storage.close();
+  `;
+  const workers=Array.from({length:2},()=>{
+    const worker=new Worker(new URL('data:text/javascript,'+encodeURIComponent(workerSource)),{workerData:{filename,barrier:barrier.buffer}});
+    const ready=new Promise((resolve,reject)=>{worker.once('message',resolve);worker.once('error',reject);});
+    const done=new Promise((resolve,reject)=>{worker.once('error',reject);worker.once('exit',code=>code===0?resolve():reject(new Error('Initialization worker exited '+code)));});
+    done.catch(()=>{});return {worker,ready,done};
+  });
+  try {
+    await Promise.all(workers.map(w=>w.ready));Atomics.store(barrier,1,1);Atomics.notify(barrier,1);
+    await new Promise(resolve=>setTimeout(resolve,150));lock.exec('COMMIT');
+    await Promise.all(workers.map(w=>w.done));assert.equal(lock.pragma('user_version',{simple:true}),1);
+    const initialized=new Storage(filename);
+    try {await initialized.put('init-check','{"ok":true}');assert.deepEqual(await (await initialized.get('init-check')).json(),{ok:true});}
+    finally {await initialized.close();}
+  }finally{
+    Atomics.store(barrier,1,1);Atomics.notify(barrier,1);if(lock.inTransaction)lock.exec('ROLLBACK');lock.close();
+    await Promise.all(workers.map(w=>w.worker.terminate()));
+  }
   await start();
   assert.equal((await request('/healthz', {signed: false, headers: {Host: '127.0.0.1'}})).status, 200);
   assert.equal((await request('/api/hosts', {signed: false})).status, 401);

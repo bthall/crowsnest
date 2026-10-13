@@ -15,6 +15,10 @@ Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 
 - Existing collectors already supply the measurements and restart counters. New rules start disabled; previous notification settings and existing host workload history remain supported.
 
+### Fixed
+
+- Serialize fresh standalone database initialization when the server and CLI open it concurrently, preventing duplicate schema creation.
+
 ## [0.10.0] - 2026-10-13
 
 ### Changed

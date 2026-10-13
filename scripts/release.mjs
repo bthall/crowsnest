@@ -36,6 +36,17 @@ export function releaseCompose(template, version, image, digest) {
   return template.replace('    build: .\n', '').replace('    image: crowsnest:' + version + '\n', '    image: ' + image + '@' + digest + '\n');
 }
 
+export function releasePlatforms(index, sha) {
+  if (!shaPattern.test(sha) || index.annotations?.['org.opencontainers.image.revision'] !== sha || !Array.isArray(index.manifests)) throw new Error('Image index does not match the release source');
+  const output = {};
+  for (const architecture of ['amd64', 'arm64']) {
+    const entries = index.manifests.filter(entry => entry.platform?.os === 'linux' && entry.platform.architecture === architecture);
+    if (entries.length !== 1 || !digestPattern.test(entries[0].digest)) throw new Error('Missing or ambiguous release platform: ' + architecture);
+    output[architecture + '_digest'] = entries[0].digest;
+  }
+  return output;
+}
+
 export async function prepareRelease(context, api, wait = ms => new Promise(resolve => setTimeout(resolve, ms))) {
   const base = '/repos/' + context.repository;
   const existing = await api(base + '/releases/tags/' + context.tag, {allow404: true});
@@ -114,14 +125,18 @@ async function run() {
     output({reuse: !!existing, digest: existing?.digest || ''});
     return;
   }
+  if (mode === 'platforms') {
+    if (!digestPattern.test(process.env.RELEASE_DIGEST)) throw new Error('Invalid release digest');
+    output(releasePlatforms(manifest(context.image + '@' + process.env.RELEASE_DIGEST), context.sha));
+    return;
+  }
   if (mode !== 'publish' || !digestPattern.test(process.env.RELEASE_DIGEST)) throw new Error('Invalid release operation');
   const digest = process.env.RELEASE_DIGEST;
   const base = '/repos/' + context.repository;
   if ((await api(base + '/git/ref/heads/main')).object.sha !== context.sha) throw new Error('Main advanced before publication');
   const source = manifest(context.image + '@' + digest);
   if (source.annotations?.['org.opencontainers.image.revision'] !== context.sha) throw new Error('Image revision does not match the release source');
-  const platforms = new Set(source.manifests?.map(value => value.platform?.os + '/' + value.platform?.architecture));
-  if (!platforms.has('linux/amd64') || !platforms.has('linux/arm64')) throw new Error('Release image is missing a supported architecture');
+  releasePlatforms(source, context.sha);
   const existing = manifest(context.image + ':' + version, true);
   if (existing && existing.digest !== digest) throw new Error('Refusing to overwrite a published version image');
   if (!existing) execFileSync('docker', ['buildx', 'imagetools', 'create', '--tag', context.image + ':' + version, context.image + '@' + digest], {stdio: 'inherit', timeout: 60000});

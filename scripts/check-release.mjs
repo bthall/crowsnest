@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {releaseContext, prepareRelease, releaseCompose, changelogNotes} from './release.mjs';
+import {releaseContext, prepareRelease, releaseCompose, releasePlatforms, changelogNotes} from './release.mjs';
 
 const sha = 'a'.repeat(40), other = 'b'.repeat(40), digest = 'sha256:' + 'c'.repeat(64);
 const event = {repository: {id: 1, full_name: 'fixture/crowsnest'}, workflow_run: {name: 'Security', event: 'push', head_branch: 'main', conclusion: 'success', head_sha: sha, head_repository: {id: 1}}};
@@ -9,6 +9,12 @@ assert.equal(context.image, 'ghcr.io/fixture/crowsnest');
 for (const changes of [{event: 'pull_request'}, {head_repository: {id: 2}}, {head_branch: 'topic'}, {conclusion: 'failure'}, {head_sha: 'invalid'}]) assert.throws(() => releaseContext({...event, workflow_run: {...event.workflow_run, ...changes}}, 'fixture/crowsnest', '0.8.0'));
 for (const version of ['01.0.0', '1.0.0-01', '1.0.0+metadata', '1.0.0\nskip=false']) assert.throws(() => releaseContext(event, 'fixture/crowsnest', version));
 releaseContext(event, 'fixture/crowsnest', '1.0.0-rc.1');
+const index = {annotations: {'org.opencontainers.image.revision': sha}, manifests: [{platform: {os: 'linux', architecture: 'amd64'}, digest}, {platform: {os: 'linux', architecture: 'arm64'}, digest: 'sha256:' + 'd'.repeat(64)}, {platform: {os: 'unknown', architecture: 'unknown'}, digest: 'sha256:' + 'e'.repeat(64)}]};
+assert.deepEqual(releasePlatforms(index, sha), {amd64_digest: digest, arm64_digest: 'sha256:' + 'd'.repeat(64)});
+assert.throws(() => releasePlatforms(index, other), /does not match/);
+assert.throws(() => releasePlatforms({...index, manifests: index.manifests.slice(0, 1)}, sha), /Missing/);
+assert.throws(() => releasePlatforms({...index, manifests: [...index.manifests, index.manifests[0]]}, sha), /ambiguous/);
+assert.throws(() => releasePlatforms({...index, manifests: [{...index.manifests[0], digest: 'latest'}, ...index.manifests.slice(1)]}, sha), /Missing/);
 const successful = {id: 2, path: '.github/workflows/check.yml', event: 'push', head_branch: 'main', head_sha: sha, status: 'completed', conclusion: 'success'};
 let run = successful, head = sha, existing = null, tag = null, waited = 0;
 const api = async path => {

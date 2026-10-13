@@ -67,22 +67,33 @@ jobs:
             org.opencontainers.image.version=${{ steps.prepare.outputs.version }}
             org.opencontainers.image.revision=${{ steps.prepare.outputs.sha }}
             org.opencontainers.image.licenses=MIT
+      - name: Resolve immutable platform manifests from the tested image index
+        id: platforms
+        if: steps.prepare.outputs.skip != 'true'
+        env:
+          RELEASE_DIGEST: ${{ steps.image.outputs.digest || steps.build.outputs.digest }}
+        run: node scripts/release.mjs platforms
       - name: Test both platform images and fail on fixable high/critical vulnerabilities
         if: steps.prepare.outputs.skip != 'true'
         env:
           RELEASE_IMAGE: ${{ steps.prepare.outputs.image }}
-          RELEASE_DIGEST: ${{ steps.image.outputs.digest || steps.build.outputs.digest }}
+          AMD64_DIGEST: ${{ steps.platforms.outputs.amd64_digest }}
+          ARM64_DIGEST: ${{ steps.platforms.outputs.arm64_digest }}
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ github.token }}
         run: |
           for platform in linux/amd64 linux/arm64; do
-            docker pull --platform "$platform" "$RELEASE_IMAGE@$RELEASE_DIGEST"
-            DOCKER_DEFAULT_PLATFORM="$platform" node scripts/check-docker.mjs "$RELEASE_IMAGE@$RELEASE_DIGEST"
+            case "$platform" in
+              linux/amd64) digest="$AMD64_DIGEST" ;;
+              linux/arm64) digest="$ARM64_DIGEST" ;;
+            esac
+            docker pull --platform "$platform" "$RELEASE_IMAGE@$digest"
+            DOCKER_DEFAULT_PLATFORM="$platform" node scripts/check-docker.mjs "$RELEASE_IMAGE@$digest"
             docker run --rm --env TRIVY_USERNAME --env TRIVY_PASSWORD \
               aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa \
               image --image-src remote --platform "$platform" --scanners vuln \
               --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress \
-              "$RELEASE_IMAGE@$RELEASE_DIGEST"
+              "$RELEASE_IMAGE@$digest"
           done
       - name: Publish the tested digest, immutable version tag, and release assets
         if: steps.prepare.outputs.skip != 'true'

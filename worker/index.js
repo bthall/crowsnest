@@ -40,11 +40,13 @@ function validatedReport(data) {
     for(const key of ['composeProject','composeService']) {
       if(c[key]!==undefined){if(!text(c[key],128))throw new Error('Invalid Compose metadata');metadata[key]=c[key];}
     }
+    if(c.resources!==undefined)metadata.resources=validatedResources(c.resources);
     seen.add(c.id); return {id:c.id,name:c.name,image:c.image,state:c.state,health:c.health,restarts:c.restarts,startedAt:c.startedAt,finishedAt:c.finishedAt,...metadata};
   });
   if(!text(data.engineVersion,80)) throw new Error('Invalid version');
   if(data.collectorVersion!==undefined && !validCollectorVersion(data.collectorVersion))throw new Error('Invalid collector version');
-  return {containers,engineVersion:data.engineVersion,...data.collectorVersion!==undefined?{collectorVersion:data.collectorVersion}:{},receivedAt:new Date().toISOString()};
+  if(data.resourceSampling!==undefined && !RESOURCE_STATES.has(data.resourceSampling))throw new Error('Invalid resource sampling');
+  return {containers,engineVersion:data.engineVersion,...data.collectorVersion!==undefined?{collectorVersion:data.collectorVersion}:{},...data.resourceSampling!==undefined?{resourceSampling:data.resourceSampling}:{},receivedAt:new Date().toISOString()};
 }
 function installer(config) {
   const blocks=[['compose.yaml',COMPOSE],['collector.py',COLLECTOR],['proxy.cfg',PROXY]];
@@ -53,7 +55,14 @@ function installer(config) {
   return SETUP.replace('__WRITE_FILES__',()=>files);
 }
 function collectorUpdate() {
-  return "bash <<'CROWSNEST_UPDATE'\nset -eu\ncd \"${CROWSNEST_COLLECTOR_DIR:-/srv/docker/docker-dashboard-collector}\"\ntest -O . && test -f collector.json && test -f compose.yaml && test ! -L collector.py\nupdate_file=\"$(mktemp .collector.py.XXXXXX)\"\ntrap 'rm -f \"$update_file\"' EXIT\ncat > \"$update_file\" <<'CROWSNEST_COLLECTOR_SOURCE'\n"+COLLECTOR+"\nCROWSNEST_COLLECTOR_SOURCE\nchmod 0644 \"$update_file\"\nmv -- \"$update_file\" collector.py\nif docker info >/dev/null 2>&1; then\n  docker compose config --quiet && docker compose up -d --force-recreate collector\nelse\n  sudo docker compose config --quiet && sudo docker compose up -d --force-recreate collector\nfi\nCROWSNEST_UPDATE\n";
+  return ["bash <<'CROWSNEST_UPDATE'",'set -eu','cd "${CROWSNEST_COLLECTOR_DIR:-/srv/docker/docker-dashboard-collector}"',
+    'test -O .','test -f collector.json','test -f compose.yaml','test ! -L collector.py','test ! -L proxy.cfg',
+    'update_file="$(mktemp .collector.py.XXXXXX)"','proxy_file="$(mktemp .proxy.cfg.XXXXXX)"',
+    "trap 'rm -f \"$update_file\" \"$proxy_file\"' EXIT", "cat > \"$update_file\" <<'CROWSNEST_COLLECTOR_SOURCE'",COLLECTOR,'CROWSNEST_COLLECTOR_SOURCE',
+    "cat > \"$proxy_file\" <<'CROWSNEST_PROXY_SOURCE'",PROXY,'CROWSNEST_PROXY_SOURCE',
+    'chmod 0644 "$update_file" "$proxy_file"','mv -- "$update_file" collector.py','mv -- "$proxy_file" proxy.cfg',
+    'if docker info >/dev/null 2>&1; then','  docker compose config --quiet && docker compose up -d --force-recreate socket-proxy collector',
+    'else','  sudo docker compose config --quiet && sudo docker compose up -d --force-recreate socket-proxy collector','fi','CROWSNEST_UPDATE',''].join('\n');
 }
 function tar(files) {
   const encoder=new TextEncoder(), chunks=[];
@@ -89,6 +98,7 @@ function collectorDownload(config,format='compose') {
   return new Response(bytes,{headers:{...downloadHeaders,'Content-Type':'application/x-tar','Content-Disposition':'attachment; filename="crowsnest-collector.tar"'}});
 }
 const validName=name=>typeof name==='string' && /^[a-zA-Z0-9][a-zA-Z0-9 ._-]{0,63}$/.test(name);
+const validGroup=group=>typeof group==='string' && (group==='' || /^[a-zA-Z0-9][a-zA-Z0-9 ._-]{0,31}$/.test(group));
 async function uniqueName(bucket,name,except) {
   let cursor;
   do {
@@ -133,6 +143,7 @@ function reportEvents(previous,report) {
   return events;
 }
 // __NOTIFICATIONS_SOURCE__
+// __RESOURCES_SOURCE__
 export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifications(env));},async fetch(request,env,ctx) {
   const url=new URL(request.url), path=url.pathname;
   const viewer=!!request.headers.get('oai-authenticated-user-id');
@@ -153,9 +164,11 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
       if(sweep)return json(await sweepNotifications(env));
       if(path==='/api/notifications' && request.method==='PATCH') {
         let data;try{data=await readJson(request,1024);}catch{return json({error:'Invalid settings'},400);}
-        if(typeof data.enabled!=='boolean' || typeof data.recoveries!=='boolean' || Object.keys(data).some(k=>!['enabled','recoveries'].includes(k)))return json({error:'Choose notification and recovery settings'},400);
+        const booleanFields=['enabled','recoveries','hostReports','unhealthy','restarting','dead'];
+        if(typeof data.enabled!=='boolean' || typeof data.recoveries!=='boolean' || booleanFields.some(k=>data[k]!==undefined && typeof data[k]!=='boolean') || Object.keys(data).some(k=>![...booleanFields,'staleMinutes','priority'].includes(k)) || data.staleMinutes!==undefined && ![2,5,10,15].includes(data.staleMinutes) || data.priority!==undefined && ![3,4,5].includes(data.priority))return json({error:'Choose valid notification settings, delay, and priority'},400);
         if(data.enabled && !ntfyDestination(env.NTFY_URL))return json({error:'Configure NTFY_URL in the Crowsnest runtime first'},409);
-        await env.BUCKET.put('notifications/settings.json',JSON.stringify({enabled:data.enabled,recoveries:data.recoveries}));
+        const previous=await notificationSettings(env);
+        await env.BUCKET.put('notifications/settings.json',JSON.stringify({...previous,...data}));
         return json(await notificationStatus(env));
       }
       if(path==='/api/notifications/test' && request.method==='POST') {
@@ -193,6 +206,7 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
       await env.BUCKET.put('snapshots/'+host.id+'.json',JSON.stringify(report));
       // Optional history failures must not turn a delivered report into an ingestion failure.
       try {await recordHistory(env.BUCKET,host.id,[...reportEvents(previous?await previous.json():null,report),...(replacement?[event('credentials','Reporting token replaced',report.receivedAt)]:[])]);}catch{console.error('History write failed');}
+      try {await recordResources(env.BUCKET,host.id,report);}catch{console.error('Resource history write failed');}
       const notify=async()=>{try{await notifyHost(env,host,report,await notificationSettings(env));}catch{console.error('Notification processing failed');}};
       if(!env.DEFER_NOTIFICATIONS){if(ctx?.waitUntil)ctx.waitUntil(notify());else await notify();}
       return json({ok:true,receivedAt:report.receivedAt});
@@ -210,7 +224,7 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
             const config=await env.BUCKET.get(item.key);if(!config)return null;
             const h=await config.json();
             const [snapshot,maintenance]=await Promise.all([env.BUCKET.get('snapshots/'+h.id+'.json'),hostMaintenance(env.BUCKET,h.id)]);
-            return {id:h.id,name:h.name,createdAt:h.createdAt,credentialRevision:h.tokenRevision||0,maintenanceUntil:maintenance.until||null,snapshot:snapshot?await snapshot.json():null};
+            return {id:h.id,name:h.name,group:h.group||'',createdAt:h.createdAt,credentialRevision:h.tokenRevision||0,maintenanceUntil:maintenance.until||null,snapshot:snapshot?await snapshot.json():null};
           }));
           hosts.push(...batch.filter(Boolean));
         } cursor=list.truncated?list.cursor:undefined;
@@ -256,10 +270,13 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
       }
       if(!hostRoute[2] && request.method==='PATCH') {
         if(!validName(data.name))return json({error:'Use a host name up to 64 characters'},400);
+        if(data.group!==undefined && !validGroup(data.group))return json({error:'Use a group up to 32 letters, numbers, spaces, dots, dashes, or underscores'},400);
+        if(Object.keys(data).some(k=>!['name','group'].includes(k)))return json({error:'Choose a host name and optional group'},400);
         if(!await uniqueName(env.BUCKET,data.name,host.id))return json({error:'That host name is already in use'},409);
-        const old=host.name;host.name=data.name;
-        if(!await writeHost(env.BUCKET,obj,host))return json({error:'Host changed. Refresh before renaming it.'},409);
-        try{if(old!==host.name)await recordHistory(env.BUCKET,host.id,[event('host','Renamed from '+old+' to '+host.name)]);}catch{console.error('History write failed');}
+        const old=host.name,oldGroup=host.group||'';host.name=data.name;
+        if(data.group!==undefined)host.group=data.group;
+        if(!await writeHost(env.BUCKET,obj,host))return json({error:'Host changed. Refresh before saving it.'},409);
+        try{await recordHistory(env.BUCKET,host.id,[...(old!==host.name?[event('host','Renamed from '+old+' to '+host.name)]:[]),...(oldGroup!==(host.group||'')?[event('host','Group changed from '+(oldGroup||'Ungrouped')+' to '+(host.group||'Ungrouped'))]:[])]);}catch{console.error('History write failed');}
         return json({ok:true});
       }
       if(!hostRoute[2] && request.method==='DELETE') {
@@ -267,6 +284,7 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
         await env.BUCKET.delete('hosts/'+host.id+'.json');
         await env.BUCKET.delete('snapshots/'+host.id+'.json');
         await env.BUCKET.delete('history/'+host.id+'.json');
+        await env.BUCKET.delete('resources/'+host.id+'.json');
         await env.BUCKET.delete('notifications/hosts/'+host.id+'.json');
         await env.BUCKET.delete('maintenance/hosts/'+host.id+'.json');
         return json({ok:true});
@@ -282,10 +300,20 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
         return collectorDownload(collectorConfig(env,host.id,token),data.format);
       }
     }
+    if(path==='/api/resources' && request.method==='GET') {
+      if(!env.BUCKET)return json({error:'Storage unavailable'},503);
+      const id=url.searchParams.get('host');
+      if(!id || !/^[a-f0-9-]{36}$/.test(id))return json({error:'Choose a valid host'},400);
+      if(!await env.BUCKET.get('hosts/'+id+'.json'))return json({error:'Unknown host'},404);
+      const object=await env.BUCKET.get('resources/'+id+'.json');
+      return json({samples:retainedResourceSamples(object?await object.json():[],Date.now()),windowSeconds:300,retentionHours:24});
+    }
     if(path==='/api/history' && request.method==='GET') {
       if(!env.BUCKET)return json({error:'Storage unavailable'},503);
       const id=url.searchParams.get('host');
       if(id && !/^[a-f0-9-]{36}$/.test(id))return json({error:'Invalid host'},400);
+      const group=url.searchParams.get('group');
+      if(group!==null && group!=='_ungrouped' && !validGroup(group))return json({error:'Invalid group'},400);
       const containerId=url.searchParams.get('container');
       if(containerId) {
         if(!id || !/^[a-f0-9]{64}$/.test(containerId))return json({error:'Choose a host and a valid container'},400);
@@ -317,7 +345,7 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
         const list=await env.BUCKET.list({prefix:'hosts/',cursor});
         for(const item of list.objects){
           const object=await env.BUCKET.get(item.key);if(!object)continue;
-          const host=await object.json();if(id && host.id!==id)continue;
+          const host=await object.json();if(id && host.id!==id || group!==null && (group==='_ungrouped'?!!host.group:(host.group||'')!==group))continue;
           const history=await env.BUCKET.get('history/'+host.id+'.json');
           if(history)for(const e of await history.json())if(Date.parse(e.at)>Date.now()-30*86400000)events.push({...e,hostId:host.id,hostName:host.name});
         }

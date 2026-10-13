@@ -58,7 +58,8 @@ try {
   assert.equal(update.collectorVersion,version);
   assert.equal(execute().status,0);assert.equal(await readFile(join(dir,'collector.py'),'utf8'),(await readFile('worker/collector.py','utf8')).replaceAll('__APP_VERSION__',version)+'\n');
   assert.equal(await readFile(join(dir,'collector.json'),'utf8'),'private fixture');assert.equal((await stat(join(dir,'collector.json'))).mode&0o777,0o600);assert.equal(await readFile(join(dir,'.env'),'utf8'),'existing user');assert.equal(await readFile(join(dir,'compose.yaml'),'utf8'),'existing compose');
-  assert.match(await readFile(calls,'utf8'),/compose up -d --force-recreate collector/);
+  assert.match(await readFile(calls,'utf8'),/compose up -d --force-recreate socket-proxy collector/);
+  assert.equal(await readFile(join(dir,'proxy.cfg'),'utf8'),(await readFile('worker/proxy.cfg','utf8'))+'\n');
   const {unlink}=await import('node:fs/promises');await unlink(join(dir,'collector.py'));await symlink(join(dir,'collector.json'),join(dir,'collector.py'));assert.notEqual(execute().status,0);assert.equal(await readFile(join(dir,'collector.json'),'utf8'),'private fixture');
   await call(path,'DELETE',{confirmName:'maintenance-host'});assert.ok(!objects.has('maintenance/hosts/'+id+'.json'));
   console.log('Passed: maintenance authorization, timers, ingestion/sweep suppression, automatic expiry, early end, truthful health/history, recovery baseline, optional Compose metadata, safe collector update, and cleanup.');

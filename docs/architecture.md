@@ -2,7 +2,7 @@
 
 The dashboard uses a shared Worker-compatible application, running either on ChatGPT Sites with R2 or in a standalone Node server with SQLite. It polls every 15 seconds and marks reports stale after two minutes.
 
-Each host runs a Python collector and an HAProxy socket proxy in Docker Compose. The proxy exposes only Docker version, container list, and container inspection reads over an internal Docker network. It denies other endpoints and methods. The collector has outbound HTTPS access and sends a report every 30 seconds. Neither service publishes ports.
+Each host runs a Python collector and an HAProxy socket proxy in Docker Compose. The proxy exposes only Docker version, container list, container inspection, and bounded one-shot stats reads over an internal Docker network. It denies other endpoints and methods. The collector has outbound HTTPS access and sends a report every 30 seconds. Neither service publishes ports.
 
 Reports include container name, image, state, health, restart count, timestamps, Docker Engine version, optional collector version, and optional Compose project/service names. Only `com.docker.compose.project` and `com.docker.compose.service` are read from labels; arbitrary labels, environment variables, logs, mounts, and network addresses are not sent. Cloudflare R2 holds registrations, latest reports, bounded activity, maintenance timers, and notification state. The dashboard does not control application containers.
 

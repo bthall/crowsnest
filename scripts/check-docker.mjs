@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 
-const image = process.argv[2] || 'crowsnest:0.8.0';
+const image = process.argv[2] || 'crowsnest:0.9.0';
 const name = 'crowsnest-check-' + randomUUID();
 const volume = name + '-data';
 const environment = {...process.env};
@@ -60,15 +60,24 @@ try {
     }
     assert.equal(config.serviceToken, undefined);
     cookie = '';
-    assert.equal((await request('/api/ingest/'+enrollment.hostId, 'POST', {engineVersion: 'fixture', containers: []}, {Authorization: 'Bearer '+config.hostToken})).status,200);
+    const fixture={engineVersion:'fixture',resourceSampling:'complete',containers:[{id:'a'.repeat(64),name:'fixture-container',image:'fixture',state:'running',health:'healthy',restarts:0,startedAt:'',finishedAt:'',resources:{cpuPercent:50,memoryBytes:800,memoryLimitBytes:2000,sampleSeconds:30}}]};
+    assert.equal((await request('/api/ingest/'+enrollment.hostId, 'POST', fixture, {Authorization: 'Bearer '+config.hostToken})).status,200);
     const parallel = await Promise.all([request('/auth/login', 'POST', {username: 'owner', password}), request('/auth/login', 'POST', {username: 'owner', password})]);
     assert.ok(parallel.every(result => result.status === 200), 'two password hashes fit within the deployment memory limit');
     console.log('Image probe: concurrent sign-ins accepted');
+    cookie=parallel[0].cookie;
+    assert.equal((await request('/api/hosts/'+enrollment.hostId,'PATCH',{name:'image-test-host',group:'Fixture'})).status,200);
+    assert.equal((await request('/api/notifications','PATCH',{enabled:false,recoveries:true,dead:false,priority:5,staleMinutes:10})).status,200);
+    const resources=JSON.parse((await request('/api/resources?host='+enrollment.hostId)).text).samples;
+    assert.equal(resources.length,1);assert.equal(resources[0].cpuPercent,50);assert.equal(resources[0].memoryBytes,800);
   } else {
     const login = await request('/auth/login', 'POST', {username: 'owner', password});
     assert.equal(login.status,200); cookie = login.cookie;
     const hosts = JSON.parse((await request('/api/hosts')).text).hosts;
     assert.equal(hosts.length,1); assert.equal(hosts[0].name,'image-test-host'); assert.ok(hosts[0].snapshot);
+    assert.equal(hosts[0].group,'Fixture');
+    assert.equal(JSON.parse((await request('/api/resources?host='+hosts[0].id)).text).samples[0].memoryBytes,800);
+    const policy=JSON.parse((await request('/api/notifications')).text);assert.equal(policy.dead,false);assert.equal(policy.priority,5);assert.equal(policy.staleMinutes,10);
   }
   console.log('Image check passed: '+phase);
   try { console.log('Image peak memory bytes: '+readFileSync('/sys/fs/cgroup/memory.peak','utf8').trim()); } catch {}

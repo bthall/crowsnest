@@ -38,3 +38,4 @@ jobs:
           package-manager-cache: false
       - run: docker build --tag crowsnest:ci .
       - run: node scripts/check-docker.mjs crowsnest:ci
+      - run: node scripts/check-proxy.mjs

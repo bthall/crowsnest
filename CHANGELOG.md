@@ -3,6 +3,20 @@
 Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 
+## [0.9.0] - 2026-10-13
+
+### Added
+
+- Optional container CPU and memory measurements with bounded, read-only sampling, honest warm-up/unavailable states, and 24-hour host workload history.
+- Labeled resource charts and an accessible readings table; container details include current CPU, memory, and memory limit.
+- Host groups with scoped navigation, containers, activity, and alerts.
+- ntfy category, host-delay, and priority controls that preserve maintenance, deduplication, and real recovery semantics.
+
+### Changed
+
+- Collector updates replace both the collector and restricted proxy configuration while retaining private credentials and user ownership.
+- Resource measurements can be omitted when needed to keep core status reports within the existing size limit. Older reports remain compatible.
+
 ## [0.8.0] - 2026-10-13
 
 ### Added

@@ -1,0 +1,62 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {testBucket} from './test-storage.mjs';
+const source=await readFile('dist/server/index.js','utf8');
+const worker=(await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'))).default;
+const helpers=await readFile('worker/resources.js','utf8');
+const {recordResources,retainedResourceSamples}=await import('data:text/javascript;base64,'+Buffer.from(helpers+'\nexport {recordResources,retainedResourceSamples};').toString('base64'));
+const objects=new Map(), bucket=testBucket(objects);
+const env={SITE_ORIGIN:'https://board.example.com',COLLECTOR_SERVICE_TOKEN:'test-service-token',BUCKET:bucket};
+const viewer={'oai-authenticated-user-id':'owner',Origin:env.SITE_ORIGIN};
+const call=(path,method='GET',data,headers=viewer)=>worker.fetch(new Request(env.SITE_ORIGIN+path,{method,headers,body:data===undefined?undefined:JSON.stringify(data)}),env);
+const setup=await (await call('/api/hosts','POST',{name:'lighthouse',format:'setup'})).json();
+const config=JSON.parse(setup.setupCommand.match(/cat > collector.json <<'DOCKER_WATCH_FILE_EOF'\n([\s\S]*?)\nDOCKER_WATCH_FILE_EOF/)[1]);
+const id=config.hostId, auth={Authorization:'Bearer '+config.hostToken}, path='/api/resources?host='+id;
+const c={id:'a'.repeat(64),name:'web',image:'nginx',state:'running',health:'healthy',restarts:0,startedAt:'',finishedAt:''};
+const report={engineVersion:'29',containers:[c]};
+const send=()=>call('/api/ingest/'+id,'POST',report,auth);
+assert.equal((await send()).status,200);assert.deepEqual((await (await call(path)).json()).samples,[]);
+assert.equal((await call(path,'GET',undefined,{})).status,401);
+assert.equal((await call('/api/resources')).status,400);
+assert.equal((await call('/api/resources?host=00000000-0000-4000-8000-000000000000')).status,404);
+report.resourceSampling='complete';c.resources={cpuPercent:250,memoryBytes:800,memoryLimitBytes:2000,sampleSeconds:30,networks:'private data'};
+assert.equal((await send()).status,200);
+let samples=(await (await call(path)).json()).samples;
+assert.equal(samples.length,1);assert.equal(samples[0].cpuPercent,250);assert.equal(samples[0].memoryBytes,800);
+assert.ok(!objects.get('snapshots/'+id+'.json').includes('private data'));
+for(const [key,values] of Object.entries({cpuPercent:[-1,'1',1000001],memoryBytes:[-1,1.5,Number.MAX_SAFE_INTEGER+1],sampleSeconds:[121,'NaN'],memoryLimitBytes:[true,{}]})) {
+  const previous=c.resources[key];
+  for(const value of values){c.resources[key]=value;const response=await send();assert.equal(response.status,400,key+' '+value);}
+  c.resources[key]=previous;
+}
+report.resourceSampling='invented';assert.equal((await send()).status,400);report.resourceSampling='partial';
+report.containers=[c,{...c,id:'b'.repeat(64),resources:undefined}];assert.equal((await send()).status,200);
+samples=(await (await call(path)).json()).samples;assert.equal(samples.length,1);assert.equal(samples[0].cpuPercent,null);assert.equal(samples[0].memoryBytes,null,'Partial measurements do not understate totals');
+report.containers=[];report.resourceSampling='complete';await send();samples=(await (await call(path)).json()).samples;assert.equal(samples[0].cpuPercent,0);assert.equal(samples[0].memoryBytes,0);
+const now=Date.now();
+const history=Array.from({length:400},(_,i)=>({at:new Date(now-(399-i)*300000).toISOString(),cpuPercent:i,memoryBytes:i}));
+assert.equal(retainedResourceSamples(history,now).length,288);
+objects.set('resources/'+id+'.json',JSON.stringify(history));
+assert.equal((await (await call(path)).json()).samples.length,288);
+const latest={...report,receivedAt:new Date(now).toISOString()};
+await recordResources(bucket,id,latest);const newer=objects.get('resources/'+id+'.json');
+await recordResources(bucket,id,{...latest,receivedAt:new Date(now-1).toISOString()});
+assert.equal(objects.get('resources/'+id+'.json'),newer,'An overlapping older sample cannot replace a newer one');
+// Force a first-write race; the helper must re-read instead of overwriting the winner.
+const raceKey='resources/race.json';let collided=false;
+const racing={...bucket,async put(key,value,options){if(!collided){collided=true;objects.set(key,JSON.stringify([{at:new Date(now+1).toISOString(),cpuPercent:99,memoryBytes:99} ]));return null;}return bucket.put(key,value,options);}};
+await recordResources(racing,'race',{...latest,receivedAt:new Date(now+2).toISOString()});
+assert.equal(JSON.parse(objects.get(raceKey)).length,1);
+// Group changes preserve credential rotation and old name-only clients preserve groups.
+assert.equal((await call('/api/hosts/'+id,'PATCH',{name:'lighthouse',group:'Production'})).status,200);
+assert.equal((await (await call('/api/hosts')).json()).hosts[0].group,'Production');
+assert.ok((await (await call('/api/history?group=Production')).json()).events.length>0);
+assert.equal((await (await call('/api/history?group=Home')).json()).events.length,0);
+assert.equal((await (await call('/api/history?group=_ungrouped')).json()).events.length,0);
+assert.equal((await call('/api/history?group=unsafe/slash')).status,400);
+await call('/api/hosts/'+id+'/collector','POST',{format:'config'});const pending=JSON.parse(objects.get('hosts/'+id+'.json')).pendingTokenHash;
+await call('/api/hosts/'+id,'PATCH',{name:'renamed'});const host=JSON.parse(objects.get('hosts/'+id+'.json'));
+assert.equal(host.group,'Production');assert.equal(host.pendingTokenHash,pending);
+for(const group of [null,{},'x'.repeat(33),'unsafe/slash'])assert.equal((await call('/api/hosts/'+id,'PATCH',{name:'renamed',group})).status,400);
+assert.equal((await call('/api/hosts/'+id,'DELETE',{confirmName:'renamed'})).status,200);assert.ok(!objects.has('resources/'+id+'.json'));
+console.log('Passed: optional measurements, allowlisted values, private history, partial totals, empty workloads, retention, conditional writes, grouping, credentials, and removal.');

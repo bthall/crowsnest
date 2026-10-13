@@ -1,6 +1,6 @@
 {
   "name": "crowsnest",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "description": "Private Docker fleet monitoring with outbound collectors and standalone deployment.",
   "type": "module",

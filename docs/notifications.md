@@ -14,7 +14,7 @@ For an authenticated server, a topic name is not a password. On a public server,
 
 ## What gets sent
 
-- A host has not reported for more than two minutes.
+- A host has not reported for more than the selected delay (two minutes by default).
 - A newly enrolled host has no first report after ten minutes.
 - A reported container is unhealthy, restarting, or dead.
 - A previously delivered issue clears, if recovery messages are enabled.
@@ -26,6 +26,12 @@ Previously delivered container alerts remain in the baseline while a host is sta
 Each host's changes are grouped into a message, limited to ten displayed changes and 3,500 UTF-8 bytes. Unchanged reports do not send repeated alerts. A changed destination starts a new baseline and can send currently active issues. Pausing stops automatic delivery; the explicit test remains available. Re-enabling compares current issues with the last delivered state.
 
 The Worker verifies ntfy's message acknowledgement before recording success. **Accepted by ntfy** does not prove delivery to a phone: subscriptions, mobile permissions, and ntfy push configuration still matter. A failed send preserves the transition for retry, with exponential backoff from 30 seconds up to 15 minutes. New reports and scheduled sweeps drive retries; superseded transitions are coalesced to current state. R2 state is not transactional: overlapping work or lost acknowledgements can duplicate a message. This is best-effort operational notification delivery, without an incident paging SLA.
+
+## Notification policy
+
+In **Alerts → ntfy notifications**, choose which conditions to send: missing host reports, unhealthy, restarting, and dead containers. All are enabled by default. Choose a host delay of 2, 5, 10, or 15 minutes and an alert priority of Default, High (the default), or Urgent. Recovery messages keep default priority. These settings apply to the entire fleet, including hosts outside the selected group.
+
+The dashboard still marks reports stale after two minutes. Notification delay changes only when a stale-host message is sent; first-report warnings remain ten minutes after enrollment. Stale hosts retain delivered container baselines even when host-report alerts are disabled or delayed. Turning off a category silently removes its baseline without reporting a recovery. Re-enabling a category alerts on an issue still present. Existing saved settings inherit the original default policy.
 
 ## Per-host maintenance
 

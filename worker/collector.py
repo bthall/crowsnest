@@ -1,5 +1,6 @@
 """Outbound Docker status collector. Standard library only; never logs credentials."""
 import json
+import math
 import re
 import time
 import urllib.error
@@ -7,6 +8,7 @@ import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Event, Lock
 
 DOCKER = 'http://socket-proxy:2375'
 COLLECTOR_VERSION = '__APP_VERSION__'
@@ -14,6 +16,83 @@ MAX_CONTAINERS = 250
 MAX_REPORT_BYTES = 131072
 INSPECTION_WORKERS = 4
 COLLECTION_BUDGET = 60
+RESOURCE_BUDGET = 6
+CPU_SAMPLES = {}
+CPU_LOCK = Lock()
+
+
+def nonnegative_int(value):
+    return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 9007199254740991
+
+
+def resource_values(data, container, sampled_at):
+    """Docker workload measurements only; never copy raw stats into a report."""
+    if not isinstance(data, dict) or data.get('id') != container['id']:
+        raise ValueError('Resource ID mismatch')
+    cpu = data.get('cpu_stats') or {}
+    total = (cpu.get('cpu_usage') or {}).get('total_usage')
+    system = cpu.get('system_cpu_usage')
+    cores = cpu.get('online_cpus')
+    if cores is None:
+        cores = len((cpu.get('cpu_usage') or {}).get('percpu_usage') or [])
+    percent, seconds = None, None
+    with CPU_LOCK:
+        previous = CPU_SAMPLES.pop(container['id'], None)
+        if (isinstance(total, int) and not isinstance(total, bool) and total >= 0
+                and isinstance(system, int) and not isinstance(system, bool) and system >= 0
+                and isinstance(cores, int) and not isinstance(cores, bool) and 0 < cores <= 4096):
+            CPU_SAMPLES[container['id']] = (container['startedAt'], total, system, sampled_at)
+            if previous and previous[0] == container['startedAt'] and 0 < sampled_at - previous[3] <= 120:
+                total_delta, system_delta = total - previous[1], system - previous[2]
+                if total_delta >= 0 and system_delta > 0:
+                    candidate = total_delta / system_delta * cores * 100
+                    if math.isfinite(candidate) and 0 <= candidate <= 1000000:
+                        percent, seconds = round(candidate, 2), round(sampled_at - previous[3], 2)
+    memory = data.get('memory_stats') or {}
+    usage, limit = memory.get('usage'), memory.get('limit')
+    cache = (memory.get('stats') or {}).get('total_inactive_file')
+    if cache is None:
+        cache = (memory.get('stats') or {}).get('inactive_file', 0)
+    return {'cpuPercent': percent, 'sampleSeconds': seconds,
+            'memoryBytes': max(0, usage - cache) if nonnegative_int(usage) and nonnegative_int(cache) else None,
+            'memoryLimitBytes': limit if nonnegative_int(limit) and limit > 0 else None}
+
+
+def collect_resources(prefix, api_version, containers, deadline):
+    running = [c for c in containers if c['state'] == 'running']
+    with CPU_LOCK:
+        active = {c['id'] for c in running}
+        for container_id in list(CPU_SAMPLES):
+            if container_id not in active:
+                del CPU_SAMPLES[container_id]
+    if tuple(map(int, api_version.split('.'))) < (1, 41):
+        return 'unsupported'
+    if not running:
+        return 'complete'
+    resource_deadline = min(deadline, time.monotonic() + RESOURCE_BUDGET)
+    denied = Event()
+
+    def sample(container):
+        if denied.is_set() or time.monotonic() >= resource_deadline:
+            return
+        try:
+            stats = get(prefix + '/containers/' + container['id'] + '/stats?stream=false&one-shot=true', resource_deadline)
+            container['resources'] = resource_values(stats, container, time.monotonic())
+        except urllib.error.HTTPError as error:
+            if error.code == 403:
+                denied.set()  # Old restricted proxies still deliver normal status.
+            error.close()
+        except Exception:
+            pass  # Optional metrics must never prevent a status report.
+
+    with ThreadPoolExecutor(max_workers=INSPECTION_WORKERS) as pool:
+        list(pool.map(sample, running))
+    measured = [c.get('resources') for c in running]
+    if all(r and r['cpuPercent'] is not None and r['memoryBytes'] is not None for r in measured):
+        return 'complete'
+    if all(r and r['memoryBytes'] is not None for r in measured):
+        return 'warming'
+    return 'partial' if any(measured) else 'unavailable'
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -101,13 +180,19 @@ def collect():
     with ThreadPoolExecutor(max_workers=INSPECTION_WORKERS) as pool:
         result = [c for c in pool.map(inspect, ids) if c is not None]
     return {'containers': result, 'engineVersion': version.get('Version', 'unknown'),
-            'collectorVersion': COLLECTOR_VERSION}
+            'collectorVersion': COLLECTOR_VERSION,
+            'resourceSampling': collect_resources(prefix, api_version, result, deadline)}
 
 
 def report(config, opener):
     endpoint = check_config(config)
     data = collect()
     body = json.dumps(data).encode()
+    if len(body) > MAX_REPORT_BYTES and 'resourceSampling' in data:
+        for container in data['containers']:
+            container.pop('resources', None)
+        data['resourceSampling'] = 'report_limit'
+        body = json.dumps(data).encode()
     if len(body) > MAX_REPORT_BYTES:
         raise ValueError('Report exceeds the dashboard limit')
     request = urllib.request.Request(endpoint, data=body, headers={

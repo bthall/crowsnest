@@ -9,6 +9,7 @@ export function testBucket(objects,pageSize=1000) {
     },
     async put(key,value,options={}) {
       if(options.onlyIf?.etagMatches!==undefined && (!objects.has(key) || etag(objects.get(key))!==options.onlyIf.etagMatches))return null;
+      if(options.onlyIf?.etagDoesNotMatch==='*' && objects.has(key))return null;
       objects.set(key,value);
       return {etag:etag(value)};
     },

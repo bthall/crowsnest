@@ -32,9 +32,17 @@ Crowsnest is a private dashboard for Docker host and container status. Run your 
 <p><img src="docs/screenshots/owner-setup-desktop.png" alt="Crowsnest owner setup with a server code, username, password, and contextual help" width="960"></p>
 </details>
 
+<details>
+<summary>Resource history</summary>
+<p><img src="docs/screenshots/resources-desktop.png" alt="Crowsnest container CPU and memory history with labeled axes and visible gaps for missing reports" width="960"></p>
+<p><img src="docs/screenshots/resources-mobile.png" alt="The same host workload charts arranged vertically on a phone-sized screen" width="390"></p>
+</details>
+
 ## Features
 
 - Multiple Docker hosts in one private dashboard.
+- Host groups that scope containers, activity, and current alerts.
+- Optional container CPU/memory details and bounded 24-hour host workload history, with labeled charts and a readings table.
 - Standalone Docker deployment with an owner account, persistent SQLite storage, and automatic alert checks.
 - Short-lived setup/recovery codes, private browser sessions, and consistent backup/restore commands.
 - Compose project grouping, service labels, and project/service search.
@@ -48,12 +56,13 @@ Crowsnest is a private dashboard for Docker host and container status. Run your 
 - Host renaming, removal, and staged reporting-token replacement.
 - Recent activity and alerts for stale hosts and unhealthy, restarting, or dead containers.
 - Optional authenticated ntfy notifications, phone subscription help, recovery messages, and retry backoff.
+- Notification category, host-delay, and priority controls for the whole fleet.
 - Timed per-host maintenance pauses with automatic notification resumption.
 - Copyable collector updates that preserve reporting credentials and user permissions.
 - Per-host collector versions, update guidance, and confirmation from a fresh report.
 - Container details with image, state, health, timestamps, restart count, Compose metadata, copyable ID, and recent changes.
 
-Crowsnest displays the latest status and records recent changes. It does not control containers or retain historical metrics. Activity retains up to 100 events per host from the last 30 days; optional ntfy delivery works while the dashboard is closed. See [notification setup](docs/notifications.md) for authentication and unattended stale-host checks.
+Crowsnest displays the latest status and records recent changes without controlling containers. Activity retains up to 100 events per host from the last 30 days; workload history retains up to 288 readings over 24 hours. Resource collection is optional and older collectors remain compatible. See [resource measurements](docs/resources.md) and [notification setup](docs/notifications.md).
 
 ## Quick start
 
@@ -144,7 +153,7 @@ The product name is Crowsnest. Existing collector filenames, the `docker-dashboa
 
 This version supports one collector installation per Docker daemon and up to 100 registered hosts. A host report supports up to 250 containers and 128 KiB. Rootless Docker requires manual socket-path and user-mapping adjustments. Host management replaces reporting credentials; changing the platform service credential still requires updating every collector.
 
-The current product version is **0.8.0**. See the [changelog](CHANGELOG.md), [project review](docs/code-review.md), and [versioning policy](docs/versioning.md).
+The current product version is **0.9.0**. See the [changelog](CHANGELOG.md), [project review](docs/code-review.md), and [versioning policy](docs/versioning.md).
 
 GitHub stores source and runs checks. Pushing source does not update a running instance. Rebuild standalone Compose deployments deliberately; ChatGPT Sites deployments use the Sites publication process.
 

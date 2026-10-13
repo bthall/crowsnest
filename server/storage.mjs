@@ -36,6 +36,7 @@ export class Storage {
       get: this.db.prepare('SELECT value, etag FROM objects WHERE key = ?'),
       put: this.db.prepare('INSERT INTO objects(key, value, etag) VALUES(?, ?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, etag=excluded.etag'),
       conditional: this.db.prepare('UPDATE objects SET value=?, etag=? WHERE key=? AND etag=?'),
+      insertOnly: this.db.prepare('INSERT INTO objects(key,value,etag) VALUES(?,?,?) ON CONFLICT(key) DO NOTHING'),
       delete: this.db.prepare('DELETE FROM objects WHERE key = ?'),
       list: this.db.prepare('SELECT key FROM objects WHERE key >= ? AND key < ? AND key > ? ORDER BY key LIMIT ?'),
     };
@@ -73,6 +74,8 @@ export class Storage {
       const next = etag(value);
       if (options.onlyIf?.etagMatches !== undefined) {
         if (!this.statements.conditional.run(value, next, key, options.onlyIf.etagMatches).changes) return null;
+      } else if (options.onlyIf?.etagDoesNotMatch === '*') {
+        if (!this.statements.insertOnly.run(key, value, next).changes) return null;
       } else this.statements.put.run(key, value, next);
       return {etag: next};
     });

@@ -2,9 +2,11 @@
 
 Choose a container name in the fleet or host table to open its details. **Back to containers** or Escape returns to the table and preserves search and attention filters. Host selection and the Activity/Alerts tabs remain available.
 
-The view displays the last reported image, process state, Docker health, restart count, uptime, start/finish timestamps, Compose project/service, and report time. Expand **Container ID** to view or copy the full ID. If clipboard access is blocked, the ID is selected for manual copying.
+The view displays the last reported image, process state, Docker health, restart count, optional CPU/memory/limit measurements, uptime, start/finish timestamps, Compose project/service, and report time. Expand **Container ID** to view or copy the full ID. If clipboard access is blocked, the ID is selected for manual copying.
 
 Reports older than two minutes are labeled stale. Uptime then stops at the last report. If a container disappears while its details are open, its last reported values remain visible with **No longer reported**; this can mean removal or replacement. A replacement with the same name has a different container ID and a separate details view.
+
+See [resource measurements](resources.md) for CPU semantics, reclaimable cache, warm-up, and unavailable states. Measurements share the report timestamp and are not live streaming stats.
 
 ## Recent changes
 

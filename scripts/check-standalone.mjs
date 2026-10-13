@@ -103,6 +103,10 @@ try {
   await runtime.storage.run(async () => { await runtime.storage.put('rollback-test', '{}'); throw new Error('forced rollback'); }, {atomic: true}).catch(() => {});
   assert.equal(await runtime.storage.get('rollback-test'), null);
   // A separate operation must wait until the entire transaction commits.
+  assert.ok(await runtime.storage.put('first-write-check','{}',{onlyIf:{etagDoesNotMatch:'*'}}));
+  assert.equal(await runtime.storage.put('first-write-check','{"changed":true}',{onlyIf:{etagDoesNotMatch:'*'}}),null);
+  assert.deepEqual(await (await runtime.storage.get('first-write-check')).json(),{});
+  await runtime.storage.delete('first-write-check');
   const transaction = runtime.storage.run(async () => { await runtime.storage.put('coherent-a', '{}'); await new Promise(resolve => setTimeout(resolve, 10)); await runtime.storage.put('coherent-b', '{}'); }, {atomic: true});
   const observer = runtime.storage.run(() => runtime.storage.db.prepare("SELECT count(*) AS n FROM objects WHERE key LIKE 'coherent-%'").get().n);
   await transaction; assert.equal(await observer, 2);

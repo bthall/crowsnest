@@ -45,6 +45,10 @@ class Sink:
 class CollectorChecks(unittest.TestCase):
     def setUp(self):
         self.inspect = json.loads(json.dumps(INSPECT))
+        collector.CPU_SAMPLES.clear()
+        self.stats = {'id': 'a' * 64, 'cpu_stats': {'cpu_usage': {'total_usage': 100}, 'system_cpu_usage': 1000, 'online_cpus': 4},
+                      'memory_stats': {'usage': 1000, 'limit': 2000, 'stats': {'inactive_file': 200}},
+                      'networks': {'private': 'must-not-collect'}, 'name': 'must-not-collect'}
 
     def fake_get(self, path, deadline):
         assert deadline > time.monotonic()
@@ -52,6 +56,8 @@ class CollectorChecks(unittest.TestCase):
             return {'ApiVersion': '1.50', 'Version': '29'}
         if path.endswith('/containers/json?all=1'):
             return [{'Id': self.inspect['Id']}]
+        if path.endswith('/stats?stream=false&one-shot=true'):
+            return self.stats
         assert path == '/v1.50/containers/' + self.inspect['Id'] + '/json'
         return self.inspect
 
@@ -206,6 +212,58 @@ class CollectorChecks(unittest.TestCase):
                     collector.time, 'sleep', side_effect=StopIteration) as sleep, self.assertRaises(StopIteration):
                 collector.main()
             sleep.assert_called_once_with(delay)
+
+    def test_resource_warmup_cgroup_cache_and_cpu(self):
+        c = {'id': 'a' * 64, 'startedAt': 'first'}
+        first = collector.resource_values(self.stats, c, 10)
+        self.assertEqual(first['memoryBytes'], 800)
+        self.assertIsNone(first['cpuPercent'])
+        self.stats['cpu_stats']['cpu_usage']['total_usage'] = 200
+        self.stats['cpu_stats']['system_cpu_usage'] = 2000
+        second = collector.resource_values(self.stats, c, 40)
+        self.assertEqual(second['cpuPercent'], 40)
+        self.assertEqual(second['sampleSeconds'], 30)
+        self.stats['memory_stats']['stats'] = {'total_inactive_file': 300, 'inactive_file': 100}
+        self.assertEqual(collector.resource_values(self.stats, c, 70)['memoryBytes'], 700)
+        for changed in [{'startedAt': 'replacement'}, {'startedAt': 'first'}]:
+            self.assertIsNone(collector.resource_values(self.stats, {**c, **changed}, 80)['cpuPercent'])
+        self.stats['cpu_stats']['cpu_usage']['total_usage'] = 0
+        self.assertIsNone(collector.resource_values(self.stats, c, 100)['cpuPercent'])
+        self.stats['memory_stats']['usage'] = True
+        self.assertIsNone(collector.resource_values(self.stats, c, 101)['memoryBytes'])
+        with self.assertRaises(ValueError):
+            collector.resource_values({**self.stats, 'id': 'b' * 64}, c, 102)
+
+    def test_optional_metrics_failure_and_privacy(self):
+        with patch.object(collector, 'get', self.fake_get):
+            result = collector.collect()
+        self.assertEqual(result['resourceSampling'], 'warming')
+        self.assertNotIn('must-not-collect', json.dumps(result))
+        self.assertEqual(set(result['containers'][0]['resources']), {'cpuPercent', 'memoryBytes', 'memoryLimitBytes', 'sampleSeconds'})
+        for error in [TimeoutError(), ValueError(), urllib.error.HTTPError('stats', 403, 'old proxy', {}, None)]:
+            def get(path, deadline):
+                if '/stats?' in path:
+                    raise error
+                return self.fake_get(path, deadline)
+            with patch.object(collector, 'get', get):
+                result = collector.collect()
+            self.assertEqual(len(result['containers']), 1)
+            self.assertEqual(result['resourceSampling'], 'unavailable')
+        c = {'id': 'a' * 64, 'state': 'running', 'startedAt': ''}
+        with patch.object(collector, 'get') as get:
+            self.assertEqual(collector.collect_resources('/v1.40', '1.40', [c], time.monotonic() + 1), 'unsupported')
+            self.assertEqual(collector.collect_resources('/v1.50', '1.50', [c], time.monotonic() - 1), 'unavailable')
+            get.assert_not_called()
+
+    def test_report_drops_optional_metrics_to_fit_limit(self):
+        payload = {'engineVersion': '29', 'resourceSampling': 'complete', 'containers': [
+            {'id': 'a' * 64, 'resources': {'extra': 'x' * collector.MAX_REPORT_BYTES}}]}
+        sink = Sink()
+        with patch.object(collector, 'collect', return_value=payload), contextlib.redirect_stdout(io.StringIO()):
+            collector.report(CONFIG, sink)
+        sent = json.loads(sink.requests[0].data)
+        self.assertEqual(sent['resourceSampling'], 'report_limit')
+        self.assertNotIn('resources', sent['containers'][0])
 
 
 if __name__ == '__main__':

@@ -36,8 +36,18 @@ function fixtures() {
   }
   data.hosts[1].maintenanceUntil=new Date(Date.now()+3600000).toISOString();
   data.availableCollectorVersion=version;
-  data.hosts[0].snapshot.collectorVersion='0.6.0';data.hosts[1].snapshot.collectorVersion=version;
+  data.hosts[0].snapshot.collectorVersion=version;data.hosts[1].snapshot.collectorVersion='0.8.0';data.hosts[2].snapshot.collectorVersion=version;
+  for(const [index,host] of data.hosts.entries()) {
+    host.group=index===2?'Home':'Production';
+    if(index===1)continue; // Preserve an older collector's honest unavailable state.
+    host.snapshot.resourceSampling='complete';
+    for(const [number,c] of host.snapshot.containers.entries())if(c.state==='running')c.resources={cpuPercent:3.6+number*2.4,memoryBytes:(48+number*64)*1048576,memoryLimitBytes:1073741824,sampleSeconds:30};
+  }
   return data;
+}
+function resourceFixtures(id) {
+  if(id==='demo-rookery')return [];
+  return Array.from({length:288},(_,i)=>({at:ago((287-i)*300+8),cpuPercent:i<2 || i===197?null:30+20*Math.sin(i/25)+7*Math.sin(i/6),memoryBytes:(1150+120*Math.sin(i/40))*1048576,runningContainers:5,sampling:i<2 || i===197?'warming':'complete'})).filter((_,i)=>i<82 || i>100);
 }
 const assets = new Map([
   ['/', ['worker/board.html', 'text/html; charset=utf-8']],
@@ -49,8 +59,9 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   res.setHeader('Cache-Control', 'no-store');
   if(url.pathname==='/api/notifications' && req.method==='GET') {
-    res.setHeader('Content-Type','application/json');res.end(JSON.stringify({configured:true,destination:'https://ntfy.example.com/crowsnest-demo',authenticated:true,enabled:true,recoveries:true,lastSuccessAt:ago(180),lastSweepAt:ago(90)}));return;
+    res.setHeader('Content-Type','application/json');res.end(JSON.stringify({configured:true,destination:'https://ntfy.example.com/crowsnest-illustrative-private-topic',authenticated:true,enabled:true,recoveries:true,hostReports:true,unhealthy:true,restarting:true,dead:true,staleMinutes:5,priority:4,lastSuccessAt:ago(180),lastSweepAt:ago(90)}));return;
   }
+  if(url.pathname==='/api/resources' && req.method==='GET'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({samples:resourceFixtures(url.searchParams.get('host')),windowSeconds:300,retentionHours:24}));return;}
   if(url.pathname==='/api/history' && req.method==='GET') {
     const events=[
       {at:ago(45),kind:'status',text:'immich-server: running/healthy → running/unhealthy',containerId:containerId('immich-server'),hostId:'demo-lighthouse',hostName:'lighthouse'},
@@ -60,7 +71,7 @@ const server = createServer(async (req, res) => {
       {at:ago(150),kind:'restart',text:'redis: 2 additional restart(s)',containerId:containerId('redis'),hostId:'demo-lighthouse',hostName:'lighthouse'},
       {at:ago(1800),kind:'report',text:'First collector report received',hostId:'demo-rookery',hostName:'rookery'},
     ];
-    const selected=events.filter(e=>(!url.searchParams.has('host')||e.hostId===url.searchParams.get('host'))&&(!url.searchParams.has('container')||e.containerId===url.searchParams.get('container')||e.matchedBy==='name'&&url.searchParams.get('container')===containerId('immich-server'))).map(e=>({...e,matchedBy:e.matchedBy||'id'}));
+    const selected=events.filter(e=>(!url.searchParams.has('host')||e.hostId===url.searchParams.get('host'))&&(!url.searchParams.has('group')||fixtures().hosts.find(h=>h.id===e.hostId)?.group===url.searchParams.get('group'))&&(!url.searchParams.has('container')||e.containerId===url.searchParams.get('container')||e.matchedBy==='name'&&url.searchParams.get('container')===containerId('immich-server'))).map(e=>({...e,matchedBy:e.matchedBy||'id'}));
     res.setHeader('Content-Type','application/json');res.end(JSON.stringify({events:selected,legacyMatches:selected.some(e=>e.matchedBy==='name')}));return;
   }
   if (url.pathname === '/api/hosts') {

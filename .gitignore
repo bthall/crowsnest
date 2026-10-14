@@ -23,7 +23,17 @@ id_rsa
 id_ecdsa
 id_ed25519
 output/
-.impeccable/review/
+# Local agent context and review artifacts belong outside distributable source.
+/.codex/
+/.impeccable/
+/AGENTS.override.md
+/PRODUCT.md
+/docs/auth-surface.md
+/docs/code-review.md
+/docs/production-readiness.md
+/docs/ui-polish.md
+/docs/ui-fleet-v0.9.md
+/docs/ui-alerts-v0.11.md
 .playwright-cli/
 .playwright/
 notifier.json

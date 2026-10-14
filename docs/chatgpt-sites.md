@@ -16,7 +16,7 @@ npm run export:site
 
 The export appears in `output/site-template`. It contains an explicit list of implementation files and a hosting manifest declaring R2 binding `BUCKET`. It omits the current Site ID, Git history, user data, host registrations, runtime settings, and collector credentials. It refuses to overwrite an existing export.
 
-The GitHub repository is currently private and has no distribution license selected. Before making source generally available, the owner needs to choose a license and a distribution channel. An exported folder prepares a separate deployment; it does not grant source access or a license.
+Crowsnest is licensed under [MIT](../LICENSE). Repository access and deployment credentials are separate: an exported folder prepares a new deployment and carries no access to an existing instance. Use your own Site identity and runtime secrets.
 
 ## Create the private Site
 
@@ -47,11 +47,9 @@ Before calling the setup complete, verify:
 - The ordinary page and static JavaScript source contain no service credential. Explicit private setup responses and collector downloads carry credentials. Manual-copy fallback reveals setup only after a requested copy is blocked; host configuration remains private.
 - A first report appears, stale reporting is clear, and desktop/mobile and keyboard flows work.
 
-## Readiness and future distribution
+## Distribution and account scope
 
-Prepared now: clean source export, private per-owner deployment guide, no embedded runtime secrets, a versioned compatibility contract, synthetic screenshots, and CI security checks.
-
-Before broad distribution: choose a source license and delivery channel; document how an installing user obtains supported Sites service access; and exercise the guide with a second independent owner. Host removal and staged reporting-token replacement are available. A versioned collector image with pairing is a possible next enrollment step; it needs a registry/distribution decision and a supported private-Site bootstrap design, rather than embedding long-lived credentials in a shell command.
+The source export has portable bindings, synthetic fixtures, and no deployment credentials. Product releases, image availability, and visibility are described in [versioning](versioning.md). The standalone installation path is covered in [self-hosting](self-hosting.md).
 
 A shared Site for unrelated users requires a separate product design: server-side ownership on every host, snapshot, registration, and reporting path; isolation of storage keys; and reporting credentials scoped to each owner. The current host collection is shared within a Site. The browser identity header establishes identity, while the Sites access policy establishes membership.
 

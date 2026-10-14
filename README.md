@@ -72,7 +72,7 @@ Crowsnest displays the latest status and records recent changes without controll
 
 ## Quick start
 
-Deploy your own dashboard with the [self-hosting guide](docs/self-hosting.md). It covers HTTPS, owner setup, notifications, upgrades, backups, and recovery. The repository currently requires access; public distribution is being prepared.
+Deploy your own dashboard with the [self-hosting guide](docs/self-hosting.md). It covers HTTPS, owner setup, notifications, upgrades, backups, and recovery.
 
 For ChatGPT hosting, follow [ChatGPT Sites setup](docs/chatgpt-sites.md) and use the clean source export.
 
@@ -148,7 +148,7 @@ See [development and validation](docs/development.md) for build output, test cov
 | [Architecture](docs/architecture.md) | Data flow, access control, and hosting |
 | [Troubleshooting](docs/troubleshooting.md) | Permissions, reporting errors, and stale hosts |
 | [Development](docs/development.md) | Local checks, CI, and release validation |
-| [UI polish](docs/ui-polish.md) | Codex tools, design decisions, and browser validation |
+| [Interface design](DESIGN.md) | Shared layout, interaction, branding, and accessibility conventions |
 | [Contributing](CONTRIBUTING.md) | Change scope, review, and validation expectations |
 | [Security](SECURITY.md) | Credential handling and vulnerability reporting |
 | [Brand assets](worker/assets/README.md) | Logo and generation brief |
@@ -159,7 +159,7 @@ New installations use the Crowsnest directory, Compose project, and container na
 
 This version supports one collector installation per Docker daemon and up to 100 registered hosts. A host report supports up to 250 containers and 128 KiB. Rootless Docker requires manual socket-path and user-mapping adjustments. Host management replaces reporting credentials; changing the platform service credential still requires updating every collector.
 
-The current product version is **0.11.0**. See the [changelog](CHANGELOG.md), [project review](docs/code-review.md), and [versioning policy](docs/versioning.md).
+The current product version is **0.11.0**. See the [changelog](CHANGELOG.md) and [versioning policy](docs/versioning.md).
 
 GitHub stores source and runs checks. Pushing source does not update a running instance. Rebuild standalone Compose deployments deliberately; ChatGPT Sites deployments use the Sites publication process.
 

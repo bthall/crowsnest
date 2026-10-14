@@ -1,7 +1,6 @@
 # Crowsnest interface
 
-This document records the current dashboard conventions for future polish passes.
-The audience and use case come from the owner's brief: a private view of Docker hosts and container status, with collectors installed under `/srv/docker`.
+Shared interface conventions for contributors. Crowsnest gives operators a private view of Docker hosts and container status.
 
 ## Direction
 

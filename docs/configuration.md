@@ -18,7 +18,7 @@ Keep `SITE_ORIGIN` as a stable reporting endpoint when changing the browser addr
 
 Authenticated homepage GET and HEAD requests on other attached domains redirect to `DASHBOARD_ORIGIN`; API and asset routes stay on the requested domain. Browser registration accepts the actual request's origin. Existing collectors continue to use their configured endpoint without reinstalling. Keep old domains attached while collectors use them.
 
-The hosting manifest retains the existing Site's identifier and declares the `BUCKET` R2 binding. Do not replace the Site ID during an update or change the access policy as a shortcut for service access. This checkout is configured for the existing deployment; provisioning a separate Site requires its own identity, storage, runtime settings, and access policy.
+The tracked hosting manifest declares the `BUCKET` R2 binding without an instance ID. A separate deployment checkout retains the platform-returned `project_id`. Preserve that exact ID during updates; do not change the access policy as a shortcut for service access. Each Site needs its own identity, storage, runtime settings, and access policy.
 
 ## Collector installation
 
@@ -50,6 +50,7 @@ A custom installation path is passed to the setup script as its first argument. 
 - Compose project/service fields are optional, at most 128 characters each. Only the standard `com.docker.compose.project` and `com.docker.compose.service` labels are collected.
 - Per-host maintenance timers allow 15 minutes, 1 hour, 4 hours, or 24 hours; the server bounds the duration.
 - Activity retains up to 100 events per host within 30 days; older entries are hidden and pruned on the next history write.
+- Resource history retains up to 288 five-minute readings over 24 hours, capped at 2 MiB per host. Large hosts can retain fewer readings. Container history is keyed by full ID.
 - Replacement reporting tokens have a ten-minute activation window. The current token remains valid until replacement activation.
 
 The collector inspects up to four containers concurrently and stops starting Docker reads after a 60-second collection budget. Individual socket operations use a timeout of at most ten seconds; this is not a hard wall-clock deadline for a peer that keeps streaming data. Docker responses are bounded to 8 MiB, and ingestion acknowledgements to 8 KiB. Reports retain the dashboard's 128 KiB limit. Collection time counts toward the 30-second reporting cadence; an overrun retries after at least one second.

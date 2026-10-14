@@ -30,7 +30,9 @@ Fleet reads process five hosts at a time, with independent snapshot/maintenance 
 
 Reporting compares each snapshot with the previous one to record container appearance/removal, state and health changes, restart increases, image changes, engine/collector version changes, container renames, and reporting recovery. First reports, renames, and activated replacements are also recorded. Each host retains at most 100 events; events older than 30 days are hidden and pruned on the next history write. The history API returns at most 100 events for the selected host or fleet. New container events carry the container ID. Container details filter the same retained history by host and ID; legacy events matched by name are labeled as potentially belonging to a previous instance. Concurrent reporting can coalesce events because R2 history writes are not transactional; this is an operational activity feed, not an audit log.
 
-In-app alerts derive from the latest reports: stale hosts, enrollment awaiting a report for more than ten minutes, and unhealthy/restarting/dead containers. Stale container states are explicitly last known. Optional ntfy delivery runs on accepted reports, with a separately scheduled sweep for stale hosts and retries. The browser controls fleet-wide enablement, recovery messages, and a rate-limited test. See [notifications](notifications.md). History starts with this release and does not reconstruct old snapshots. Optional history-write failures do not reject an otherwise valid report.
+In-app alerts derive from the latest reports: stale hosts, enrollment awaiting a report for more than ten minutes, unhealthy/restarting/dead containers, and confirmed resource/restart rules when enabled. Stale container states are explicitly last known. Optional ntfy delivery runs on accepted reports, with a separately scheduled sweep for stale hosts and retries. The browser controls fleet-wide policy, recovery messages, and a rate-limited test. See [notifications](notifications.md). History records changes from incoming reports and does not reconstruct earlier snapshots. Optional history-write failures do not reject an otherwise valid report.
+
+Resource history keeps each five-minute window's latest report, up to 24 hours, 288 readings, and 2 MiB per host. Per-container readings belong to full IDs; replacements do not inherit another container's history. Signal tracking uses fresh reports to establish sustained resource usage and observed restart deltas. Missing measurements and reporting gaps remain explicit. See [resource measurements](resources.md).
 
 Per-host maintenance is stored separately from registration records so timer writes cannot overwrite credential changes. Both ingestion and sweeps check the server-time expiry before automatic delivery. During a pause, the last delivered notification baseline remains intact. After expiry or early end, current issues are re-evaluated on the next report or sweep. Reports, health, and activity continue during maintenance. These R2 operations are best effort: an already in-flight publish can finish after a pause starts.
 
@@ -40,6 +42,8 @@ Per-host maintenance is stored separately from registration records so timer wri
 - `Dockerfile`, `compose.yaml`: standalone dashboard build and deployment.
 
 - `worker/notifications.js`: server-side ntfy transitions, acknowledgements, retry state, and sweeps.
+- `worker/signals.js`: sustained resource and observed restart windows, strict policy validation, and notification targets.
+- `worker/resources.js`: resource validation, workload totals, bounded storage, and per-container readings.
 - `notifier/`: optional standard-library Python runner and restricted Compose deployment for minute sweeps.
 - `worker/index.js`: routes, registration, report validation, and installer generation.
 - `worker/board.html`, `board.js`, `board.css`: dashboard structure, interactions, and styles.
@@ -49,7 +53,7 @@ Per-host maintenance is stored separately from registration records so timer wri
 - `worker/compose.yaml`: collector deployment template.
 - `worker/setup.sh`: installer template.
 - `scripts/`: Worker assembly and checks.
-- `.openai/hosting.json`: the existing Site's non-secret identity and R2 binding declaration.
+- `.openai/hosting.json`: portable R2 binding declaration; deployment checkouts also retain their own Site identity.
 
 ## Publishing
 

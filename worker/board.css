@@ -146,7 +146,7 @@ p { margin: 6px 0 0; color: var(--muted); }
 .host-list { display: flex; flex-direction: column; gap: 5px; }
 .host-selector { display: flex; flex-direction: column; gap: 5px; }
 .host-list > p { font-size: 13px; padding: 10px; }
-.host { display: block; width: 100%; text-align: left; padding: 12px; background: transparent; border-color: transparent; }
+.host { display: block; width: 100%; text-align: left; padding: 12px; background: transparent; border-color: transparent; border-radius: 6px; }
 .host:hover { background: #18232d; }
 .host.selected { background: #26312e; border-color: #5b5140; }
 .host-name { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -181,7 +181,7 @@ input::placeholder { color: #abb7c1; opacity: 1; }
 .filter { font-size: 12px; background: transparent; gap: 10px; white-space: nowrap; }
 .filter[aria-pressed="true"] { background: #403420; border-color: #90744d; color: #f4cf98; }
 .filter[aria-pressed="true"] .count { background: #60482d; color: #ffe0b4; }
-.table-wrap { overflow-x: auto; }
+.table-wrap { overflow-x: auto; padding: 2px; margin: -2px; }
 table { width: 100%; border-collapse: collapse; text-align: left; }
 th { background: #111b24; color: var(--muted); font-size: 11px; font-weight: 600; white-space: nowrap; }
 th, td { padding: 13px 16px; border-bottom: 1px solid #273440; }
@@ -219,9 +219,9 @@ code { font: .9em/1.6 ui-monospace, monospace; color: #eac38d; overflow-wrap: an
 footer { margin-top: 22px; color: var(--muted); font-size: 11px; display: flex; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
 .version { margin-left: 5px; color: var(--muted); }
 .footer-divider { margin: 0 8px; color: #71808b; }
-dialog { width: min(500px, calc(100% - 32px)); max-height: calc(100% - 48px); overflow-y: auto; background: var(--panel); border: 1px solid #5d584b; border-radius: 12px; color: var(--text); padding: 26px; }
+dialog { width: min(500px, calc(100% - 32px)); max-height: calc(100% - 48px); overflow-y: auto; background: var(--panel); border: 1px solid #5d584b; border-radius: 12px; color: var(--text); padding: 26px 26px 32px; scroll-padding-bottom: 24px; }
 #setup { width: min(680px, calc(100% - 32px)); }
-.setup-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; list-style: none; padding: 18px 0; margin: 20px 0 4px; border-block: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+.setup-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; list-style: none; padding: 18px 0; margin: 20px 0 4px; border-block: 1px solid var(--line); color: var(--muted); font-size: 12px; margin-left: 0; padding-left: 0; }
 .setup-steps li { display: flex; align-items: center; gap: 8px; }
 .setup-steps li > span { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; flex-shrink: 0; border: 1px solid var(--line); border-radius: 50%; font-variant-numeric: tabular-nums; }
 .setup-steps li[aria-current="step"] { color: var(--accent); font-weight: 650; }
@@ -253,7 +253,7 @@ button.danger:hover { background: #523237; }
 dialog::backdrop { background: #030812bf; }
 .dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .dialog-heading h2 { font-size: 21px; overflow-wrap: anywhere; min-width: 0; }
-.close-button { padding: 0; width: 38px; min-height: 38px; background: transparent; border-color: transparent; }
+.close-button { padding: 0; width: 38px; min-height: 38px; background: transparent; border-color: transparent; border-radius: 6px; }
 dialog p { font-size: 13px; }
 dialog label { display: block; margin: 24px 0 8px; font-size: 13px; font-weight: 600; }
 .input-help { font-size: 11px; margin-top: 8px; }
@@ -272,7 +272,7 @@ dialog label { display: block; margin: 24px 0 8px; font-size: 13px; font-weight:
 @media (max-width: 850px) {
   .inspection-columns { grid-template-columns: minmax(0, 1fr); gap: 28px; }
   .workspace { grid-template-columns: minmax(0, 1fr); gap: 18px; }
-  .host-selector { flex-direction: row; align-items: stretch; overflow-x: auto; padding: 4px 4px 8px; margin: -4px; }
+  .host-selector { flex-direction: row; align-items: stretch; overflow-x: auto; padding: 6px 6px 10px; margin: -6px; }
   .host-list { flex-direction: row; flex-shrink: 0; }
   .host-selector .host { flex: 0 0 190px; width: 190px; }
   .host-sidebar { min-width: 0; }

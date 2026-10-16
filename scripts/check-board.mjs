@@ -31,8 +31,10 @@ assert.equal((await call('/',{headers:viewer})).status,200);
 const brandedPage=await (await call('/',{headers:viewer})).text();
 assert.match(brandedPage,/<title>Crowsnest/);
 assert.match(brandedPage,/src="\/assets\/crowsnest-mark\.png"/);
-const csp=(await call('/',{headers:viewer})).headers.get('Content-Security-Policy');
-assert.ok(!csp.includes('unsafe-inline')&&!csp.includes('unsafe-eval'));
+const homeRes=await call('/',{headers:viewer});
+assert.equal(homeRes.headers.get('X-Frame-Options'),'DENY');
+const csp=homeRes.headers.get('Content-Security-Policy');
+assert.ok(!csp.includes('unsafe-inline')&&!csp.includes('unsafe-eval')&&csp.includes("frame-ancestors 'none'"));
 for(const [path,type] of [['/assets/board.js','text/javascript'],['/assets/board.css','text/css']]) {
   assert.equal((await call(path)).status,401);
   const asset=await call(path,{headers:viewer});

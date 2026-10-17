@@ -2,7 +2,9 @@
 
 ## Reporting a vulnerability
 
-Report suspected vulnerabilities privately to the repository owner, `@bthall`, through your established private contact channel. Include the affected revision, a description of the issue, and reproduction steps using synthetic or redacted data. Do not place active credentials or exploitable details in an issue or pull request.
+Use **Report a vulnerability** on [Crowsnest's security advisories page](https://github.com/bthall/crowsnest/security/advisories) to contact the maintainer privately through GitHub. If the button is unavailable, open an issue asking only for a private reporting channel, without vulnerability details.
+
+Include the affected revision, a description of the issue, and reproduction steps using synthetic or redacted data. Do not place active credentials or exploitable details in a public issue or pull request.
 
 Crowsnest is in initial development. Reports should identify the current `main` revision or the exact deployed revision; no separate support schedule has been published for older versions.
 
@@ -18,7 +20,7 @@ A collector uses two credentials: a platform service credential to reach the pri
 
 Collector versions from 0.7.2 require an HTTPS reporting origin, retain certificate verification, and deny redirects before either reporting credential can be forwarded. Apply the source-only collector update to existing hosts to receive this protection. Renames and staged-token writes use R2 ETag preconditions to prevent stale registration writes from replacing newer credentials.
 
-The socket proxy permits only Docker version, container list, and container inspection reads. A read-only socket mount alone does not restrict API methods. Container inspection can expose sensitive local information, so the collector and proxy must remain trusted even though only selected status fields are transmitted.
+The socket proxy permits only Docker version, container list, container inspection, and bounded one-shot container stats reads. Streaming stats and all mutation methods are denied. A read-only socket mount alone does not restrict API methods. Container inspection can expose sensitive local information, so the collector and proxy must remain trusted even though only selected status fields are transmitted.
 
 ## Credential handling
 

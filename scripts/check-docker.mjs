@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 
-const image = process.argv[2] || 'crowsnest:0.11.0';
+const image = process.argv[2] || 'crowsnest:0.11.1';
 const name = 'crowsnest-check-' + randomUUID();
 const volume = name + '-data';
 const environment = {...process.env};

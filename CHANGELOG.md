@@ -3,6 +3,15 @@
 Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 
+## [0.11.1] - 2026-10-17
+
+### Fixed
+
+- Keep the standalone image on digest-pinned Node 24 LTS and require deliberate review of runtime-major upgrades.
+- Use constant-time comparison for hashed setup and recovery codes; reject framing with X-Frame-Options and Content-Security-Policy.
+- Preserve visible focus spacing in dialogs and selectors.
+- Document GitHub private vulnerability reporting and the Release workflow's publication permissions. CI rejects deployment-specific Site identities in current source while credential scans cover Git history.
+
 ## [0.11.0] - 2026-10-13
 
 ### Added

@@ -47,7 +47,10 @@ jobs:
         with:
           node-version: '22'
           package-manager-cache: false
-      - run: node scripts/check-secrets.mjs --history
+      - name: Scan source and history for credentials
+        run: node scripts/check-secrets.mjs --history
+      - name: Keep deployment identities out of distributed source
+        run: node scripts/check-secrets.mjs --public
       - name: Audit npm dependency metadata
         run: npm audit --audit-level=high
   static-analysis:

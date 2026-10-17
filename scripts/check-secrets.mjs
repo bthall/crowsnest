@@ -26,6 +26,7 @@ function check(name,buffer,history=false) {
   // The generated logo is a PNG binary, not configuration or executable text.
   if(buffer.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])))return;
   const text=buffer.toString('utf8');
+  if(process.argv.includes('--public') && /\bappgprj_[A-Za-z0-9]{16,}\b/.test(text))findings.add(label+' (private Site identity)');
   if(patterns.some(pattern=>pattern.test(text)))findings.add(label+' (credential pattern)');
   for(const match of text.matchAll(credentialAssignment)) {
     if(!synthetic.has(match[1])&&!authFixtures.get(name)?.has(match[1])&&!/^<[^>]+>$/.test(match[1]))findings.add(label+' (literal credential assignment)');

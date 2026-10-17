@@ -4,6 +4,7 @@ import {promisify} from 'node:util';
 const scrypt = promisify(scryptCallback);
 const sessionDuration = 8 * 60 * 60 * 1000;
 const hashToken = token => createHash('sha256').update(token).digest('hex');
+const safeEqual = (a, b) => typeof a === 'string' && typeof b === 'string' && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 const secret = () => randomBytes(32).toString('base64url');
 const parameters = {N: 131072, r: 8, p: 1, maxmem: 256 * 1024 * 1024};
 const validPassword = password => typeof password === 'string' && password.length >= 12 && password.length <= 128 && Buffer.byteLength(password) <= 512;
@@ -67,13 +68,13 @@ export class Authentication {
     const eligible = await this.storage.run(() => {
       const row = this.storage.db.prepare('SELECT * FROM bootstrap WHERE id=1').get();
       const owner = this.storage.db.prepare('SELECT username FROM owner').get();
-      return row?.hash === hashToken(data.code) && row.expires > Date.now() && row.purpose === purpose && (purpose === 'setup' ? !owner : owner?.username === data.username);
+      return !!row && safeEqual(row.hash, hashToken(data.code)) && row.expires > Date.now() && row.purpose === purpose && (purpose === 'setup' ? !owner : owner?.username === data.username);
     });
     if (!eligible) throw Object.assign(new Error('The code is invalid or expired. Generate a new code on the server.'), {status: 403});
     const password = await this.#passwordHash(data.password);
     return this.storage.run(() => {
       const row = this.storage.db.prepare('SELECT * FROM bootstrap WHERE id=1').get();
-      if (!row || row.hash !== hashToken(data.code) || row.expires <= Date.now() || row.purpose !== purpose) throw Object.assign(new Error('The code is invalid or expired.'), {status: 403});
+      if (!row || !safeEqual(row.hash, hashToken(data.code)) || row.expires <= Date.now() || row.purpose !== purpose) throw Object.assign(new Error('The code is invalid or expired.'), {status: 403});
       this.storage.db.prepare('INSERT INTO owner VALUES(1, ?, ?) ON CONFLICT(id) DO UPDATE SET password=excluded.password').run(data.username, password);
       this.storage.db.prepare('DELETE FROM bootstrap').run();
       this.storage.db.prepare('DELETE FROM sessions').run();

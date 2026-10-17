@@ -10,7 +10,7 @@ const VERSION = '__APP_VERSION__';
 // __VERSIONS_SOURCE__
 const STATES = new Set(['running','exited','created','restarting','paused','dead','removing','unknown']);
 const HEALTH = new Set(['healthy','unhealthy','starting','none']);
-const headers = {'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'};
+const headers = {'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','X-Frame-Options':'DENY'};
 function json(data, status=200) { return new Response(JSON.stringify(data), {status,headers:{...headers,'Content-Type':'application/json'}}); }
 async function hash(value) { return [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))].map(x=>x.toString(16).padStart(2,'0')).join(''); }
 function sameOrigin(request) { return request.headers.get('Origin') === new URL(request.url).origin; }
@@ -217,7 +217,7 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
     if(path==='/assets/crowsnest-mark.png' && request.method==='GET')return new Response(Uint8Array.from(atob(LOGO),c=>c.charCodeAt(0)),{headers:{...headers,'Content-Type':'image/png','Cache-Control':'private, max-age=86400'}});
     if(path==='/assets/board.js' && request.method==='GET')return new Response(BOARD_JS,{headers:{...headers,'Content-Type':'text/javascript; charset=utf-8'}});
     if(path==='/assets/board.css' && request.method==='GET')return new Response(BOARD_CSS,{headers:{...headers,'Content-Type':'text/css; charset=utf-8'}});
-    if(path==='/' && request.method==='GET')return new Response(HTML,{headers:{...headers,'Content-Type':'text/html; charset=utf-8','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'"}});
+    if(path==='/' && request.method==='GET')return new Response(HTML,{headers:{...headers,'Content-Type':'text/html; charset=utf-8','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"}});
     if(path==='/api/hosts' && request.method==='GET') {
       if(!env.BUCKET)return json({error:'Storage unavailable'},503);
       const settings=await notificationSettings(env),signalEnabled=settings.cpuAlerts || settings.memoryAlerts || settings.restartBursts;

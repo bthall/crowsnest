@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM node:25-bookworm-slim@sha256:81db02c4b671288a03915da9534dbd54f96d0e7c24d80ccc54f5b36b2e684370 AS build
+FROM node:24-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5 AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN --mount=type=secret,id=proxy_ca \
@@ -9,7 +9,7 @@ COPY scripts/build-board.mjs scripts/build-board.mjs
 COPY worker worker
 RUN node scripts/build-board.mjs --standalone
 
-FROM node:25-bookworm-slim@sha256:81db02c4b671288a03915da9534dbd54f96d0e7c24d80ccc54f5b36b2e684370
+FROM node:24-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5
 WORKDIR /app
 ENV NODE_ENV=production NODE_OPTIONS=--max-old-space-size=192 CROWSNEST_BIND=0.0.0.0 CROWSNEST_PORT=8080 CROWSNEST_DATA_DIR=/data
 COPY --from=build --chown=node:node /app/node_modules node_modules

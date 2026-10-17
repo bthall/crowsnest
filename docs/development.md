@@ -1,6 +1,6 @@
 # Development
 
-Use Node.js 22.13 or newer, Bash, Git, Linux `flock`, and Python 3 on Linux. The Worker has no runtime npm dependencies; the standalone server uses pinned `better-sqlite3`. Docker is required for the container integration suite and live collector checks. Installer tests use a Docker command double.
+Use Node.js 22.13 or newer, Bash, Git, GNU tar, Linux `flock`, and Python 3 on Linux. The Worker has no runtime npm dependencies; the standalone server uses pinned `better-sqlite3`. Docker is required for the container integration suite and live collector checks. Installer tests use a Docker command double.
 
 ```bash
 npm ci --ignore-scripts --no-audit --no-fund
@@ -14,7 +14,9 @@ The checks cover private routes, same-origin writes on generated and custom doma
 
 The resilience suite interleaves real API operations against an R2 test double with ETags and partial pages. It covers credential/rename/removal conflicts, JSON shapes, malformed UTF-8, direct host activity reads, and the concurrency ceiling for fleet polling. Collector tests import the actual module, verify its data allowlist, acknowledgements, configuration, response/report limits, admission deadline, four-worker ordering, and container churn. A loopback HTTP server exercises 301/302/303/307/308 denial using synthetic credentials; it never contacts production. Notification tests cover stale-host preservation of delivered container baselines.
 
-GitHub Actions runs these checks on pushes and pull requests with Python 3.12 and 3.13. The Security workflow runs on these events, weekly, and on manual dispatch. It uses checksum-verified Gitleaks for complete Git history and a digest-pinned Semgrep image with local rules. CI has read-only repository permissions and does not deploy the Site or change any host.
+Release checks execute the production publisher with synthetic GitHub and registry responses. They create a real deployment archive and verify its contents, checksums, image digest, and source links. Conflicting images and incomplete platform SBOMs must prevent GitHub tag and release creation. These checks do not publish or contact external services.
+
+GitHub Actions runs these checks on pushes and pull requests with Python 3.12 and 3.13. The Security workflow runs on these events, weekly, and on manual dispatch. It uses checksum-verified Gitleaks for complete Git history and a digest-pinned Semgrep image with local rules. Checks and Security have read-only repository permissions. The separate Release workflow can publish version tags, GitHub releases, and GHCR images after matching main-branch checks succeed. No workflow deploys the Site or changes a running host.
 
 For a live integration check, use a temporary installation on a Docker host. Verify that a non-root collector reads its mode-0600 credentials and that reports arrive at the dashboard. Retain the host credentials privately; never commit generated setup downloads, collector.json, .env, or service tokens.
 
@@ -23,6 +25,8 @@ Copy setup checks execute the generated clipboard block in Bash using the Docker
 ## Secret checks
 
 `npm run check` scans tracked files for common credential patterns and generated configuration files, including quoted JSON/Python credential assignments. Its scanner regression uses isolated temporary Git fixtures and synthetic values. To include local Git history, run `node scripts/check-secrets.mjs --history`. Review the staged diff as well; the pattern check does not identify every possible secret. See [SECURITY.md](../SECURITY.md).
+
+Public source CI separately runs `node scripts/check-secrets.mjs --public` to reject deployment-specific Site identities in the current tracked source. Credential scans continue to cover the complete Git history. Omit `--public` in a private Site deployment checkout, where the platform-returned identity must be retained.
 
 ## UI preview and screenshots
 
@@ -36,9 +40,9 @@ The standalone HTTP/SQLite suite checks authentication, spoofed identity, Host/O
 
 Gitleaks 8.30.1 is pinned by release checksum in `.github/workflows/security.yml`. It scans all Git refs with credential output redacted. Semgrep 1.180.0 is pinned by image digest; it runs without network access using `.semgrep.yml`. The six rules prohibit dynamic code evaluation, HTML injection sinks, shell execution in hosted application code, disabled collector TLS verification, and privileged collector containers. These focused rules supplement the API security regression checks and manual review; they are not a full vulnerability assessment. A separate digest-pinned Trivy job scans an exported image without mounting the Docker socket and fails on fixable high/critical findings.
 
-Actions use immutable commit SHAs, checkout credentials are not persisted, workflows have read-only permissions, and Dependabot proposes GitHub Actions, npm, and Docker updates. Review scanner releases and refresh their version/hash together. `npm audit --audit-level=high` checks package metadata; the Worker has no runtime npm dependencies; the standalone dependency is pinned.
+Actions use immutable commit SHAs, checkout credentials are not persisted, and Dependabot proposes GitHub Actions, npm, and Docker updates. The standalone image uses Node 24 LTS; review runtime-major upgrades deliberately and confirm upstream support before changing that line. Review scanner releases and refresh their version/hash together. `npm audit --audit-level=high` checks package metadata; the Worker has no runtime npm dependencies; the standalone dependency is pinned.
 
-CI runs checks only and has no deployment credentials. Read-only workflow files alone do not enforce branch protection. Set required-check rules where supported.
+Checks and Security have no deployment credentials. Release receives a workflow token with contents and packages write permissions, scoped to its trusted publication job. Workflow files alone do not enforce branch protection. Set required-check rules where supported.
 
 ## Resource and group checks
 

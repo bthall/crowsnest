@@ -122,7 +122,7 @@ Read the [architecture guide](docs/architecture.md) and [security policy](SECURI
 
 ## Development
 
-Use Node.js 22.13 or newer, Bash, Git, Linux `flock`, and Python 3 on Linux. The Worker has no runtime npm dependencies; the standalone server uses the pinned `better-sqlite3` package.
+Use Node.js 22.13 or newer, Bash, Git, GNU tar, Linux `flock`, and Python 3 on Linux. The Worker has no runtime npm dependencies; the standalone server uses the pinned `better-sqlite3` package.
 
 ```bash
 npm ci --ignore-scripts --no-audit --no-fund
@@ -159,7 +159,7 @@ New installations use the Crowsnest directory, Compose project, and container na
 
 This version supports one collector installation per Docker daemon and up to 100 registered hosts. A host report supports up to 250 containers and 128 KiB. Rootless Docker requires manual socket-path and user-mapping adjustments. Host management replaces reporting credentials; changing the platform service credential still requires updating every collector.
 
-The current product version is **0.11.0**. See the [changelog](CHANGELOG.md) and [versioning policy](docs/versioning.md).
+The current product version is **0.11.1**. See the [changelog](CHANGELOG.md) and [versioning policy](docs/versioning.md).
 
 GitHub stores source and runs checks. Pushing source does not update a running instance. Rebuild standalone Compose deployments deliberately; ChatGPT Sites deployments use the Sites publication process.
 

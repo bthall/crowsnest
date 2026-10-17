@@ -9,10 +9,10 @@ const git=args=>execFileSync('git',args,{cwd:root,stdio:'pipe'});
 const candidate=['synthetic','candidate'].join('-');
 try {
   git(['init','--quiet']);
-  const check=(name,content,rejected)=>{
+  const check=(name,content,rejected,flags=[])=>{
     writeFileSync(join(root,name),content);
     git(['add','--',name]);
-    const result=spawnSync(process.execPath,[scanner],{cwd:root,encoding:'utf8'});
+    const result=spawnSync(process.execPath,[scanner,...flags],{cwd:root,encoding:'utf8'});
     assert.equal(result.status,rejected?1:0,result.stderr);
     assert.ok(!result.stderr.includes(candidate),'Scanner must report paths without revealing values');
     git(['rm','--quiet','--force','--',name]);
@@ -27,5 +27,19 @@ try {
   check('collector.json','{}',true);
   check('crowsnest-setup.sh','# generated installer',true);
   check('.env','DEMO=example',true);
-  console.log('Passed: secret scanner rejects quoted JSON/Python credentials and generated files, permits declared examples, and redacts values.');
+  const siteId='appgprj_'+'a'.repeat(32);
+  check('hosting.json',JSON.stringify({project_id:siteId}),false);
+  check('hosting.json',JSON.stringify({project_id:siteId}),true,['--public']);
+  check('hosting.json',JSON.stringify({d1:null,r2:'BUCKET'}),false,['--public']);
+  writeFileSync(join(root,'hosting.json'),JSON.stringify({project_id:siteId}));
+  git(['add','hosting.json']);
+  const commit=['-c','user.name=Scanner fixture','-c','user.email=fixture@example.com','commit','--quiet','-m'];
+  git([...commit,'Synthetic deployment identity']);
+  git(['rm','--quiet','hosting.json']);
+  git([...commit,'Remove synthetic identity']);
+  const history=spawnSync(process.execPath,[scanner,'--public','--history'],{cwd:root,encoding:'utf8'});
+  assert.equal(history.status,1,history.stderr);
+  assert.match(history.stderr,/hosting\.json \(history\) \(private Site identity\)/);
+  assert.ok(!history.stderr.includes(siteId),'History diagnostics must redact deployment identities');
+  console.log('Passed: secret scanner rejects credentials/generated files, distinguishes private deployment from public source, checks removed historical identities, and redacts values.');
 }finally{rmSync(root,{recursive:true,force:true});}

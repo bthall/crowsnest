@@ -10,8 +10,9 @@ const VERSION = '__APP_VERSION__';
 // __VERSIONS_SOURCE__
 const STATES = new Set(['running','exited','created','restarting','paused','dead','removing','unknown']);
 const HEALTH = new Set(['healthy','unhealthy','starting','none']);
-const headers = {'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','X-Frame-Options':'DENY'};
+const headers = {'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','X-Frame-Options':'DENY','Cross-Origin-Opener-Policy':'same-origin','Permissions-Policy':'camera=(), microphone=(), geolocation=()'};
 function json(data, status=200) { return new Response(JSON.stringify(data), {status,headers:{...headers,'Content-Type':'application/json'}}); }
+function safeEqual(a,b) { if(typeof a!=='string' || typeof b!=='string' || a.length!==b.length) return false; let c=0; for(let i=0;i<a.length;i++) c |= a.charCodeAt(i) ^ b.charCodeAt(i); return c===0; }
 async function hash(value) { return [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))].map(x=>x.toString(16).padStart(2,'0')).join(''); }
 function sameOrigin(request) { return request.headers.get('Origin') === new URL(request.url).origin; }
 function dashboardOrigin(value) {
@@ -152,7 +153,7 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
   const ingest=path.match(/^\/api\/ingest\/([a-f0-9-]{36})$/);
   const sweep=path==='/api/notifications/sweep' && request.method==='POST';
   const notificationService=(path==='/api/notifications/sweep' && ['GET','POST'].includes(request.method) || path==='/api/notifications/test' && request.method==='POST');
-  const sweepAuth=notificationService && !!env.COLLECTOR_SERVICE_TOKEN && await hash(request.headers.get('Authorization')||'')===await hash('Bearer '+env.COLLECTOR_SERVICE_TOKEN);
+  const sweepAuth=notificationService && !!env.COLLECTOR_SERVICE_TOKEN && safeEqual(await hash(request.headers.get('Authorization')||''), await hash('Bearer '+env.COLLECTOR_SERVICE_TOKEN));
   if(!ingest && !viewer && !sweepAuth) return json({error:'Sign in to view this private board'},401);
   try {
     const canonical=dashboardOrigin(env.DASHBOARD_ORIGIN);
@@ -196,8 +197,8 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
       const auth=request.headers.get('Authorization') || '';
       if(!auth.startsWith('Bearer '))return json({error:'Invalid reporting token'},403);
       const tokenHash=await hash(auth.slice(7));
-      const replacement=tokenHash===host.pendingTokenHash && Date.parse(host.pendingTokenExpiresAt)>Date.now();
-      if(tokenHash!==host.tokenHash && !replacement)return json({error:'Invalid reporting token'},403);
+      const replacement=safeEqual(tokenHash, host.pendingTokenHash) && Date.parse(host.pendingTokenExpiresAt)>Date.now();
+      if(!safeEqual(tokenHash, host.tokenHash) && !replacement)return json({error:'Invalid reporting token'},403);
       let report; try {report=validatedReport(await readJson(request));}catch{return json({error:'Invalid report'},400);}
       const previous=await env.BUCKET.get('snapshots/'+host.id+'.json');
       if(replacement) {

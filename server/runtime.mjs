@@ -11,6 +11,8 @@ const securityHeaders = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
   'X-Frame-Options': 'DENY',
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
   'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
 };
 const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), {status, headers: {...securityHeaders, 'Content-Type': 'application/json', ...headers}});

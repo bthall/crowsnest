@@ -31,7 +31,7 @@ The socket proxy permits only Docker version, container list, container inspecti
 - Use synthetic credentials in examples and automated tests.
 - Exclude generated installs, environment files, keys, and credential-bearing diagnostics from Git.
 
-The tracked `.openai/hosting.json` contains a non-secret Site identifier and an R2 binding name. It contains no runtime credentials. Clean exports omit this Site identity and all runtime settings. README screenshots contain only fictional data.
+The public repository's `.openai/hosting.json` declares the portable R2 binding `BUCKET` and contains no Site identifier or runtime credentials. A private deployment checkout retains its own platform-returned Site identifier. Clean exports omit deployment identity and runtime settings. README screenshots contain only fictional data.
 
 ## Checks and incident handling
 

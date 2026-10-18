@@ -2,11 +2,11 @@
 
 The supported deployment model is **one private Site per owner**, with its own storage and reporting credentials. This keeps each user's Docker fleet separate and matches the current single-owner application.
 
-This guide follows the Sites skill's source, authentication, storage, and publication workflow. Access to Sites, private repository access, and supported service access must be available to the installing user.
+This guide follows the Sites skill's source, authentication, storage, and publication workflow. The source repository is public. The installing user needs access to Sites and supported service access for their own private deployment.
 
 ## Prepare source
 
-From an authorized checkout:
+From a checkout of this repository:
 
 ```bash
 npm ci --ignore-scripts --no-audit --no-fund

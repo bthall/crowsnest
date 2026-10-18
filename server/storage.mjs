@@ -3,6 +3,7 @@ import {AsyncLocalStorage} from 'node:async_hooks';
 import {createHash} from 'node:crypto';
 import {chmodSync, mkdirSync} from 'node:fs';
 import {dirname} from 'node:path';
+import {schemaSql, schemaVersion} from './schema.mjs';
 
 const etag = value => createHash('sha256').update(value).digest('hex');
 
@@ -23,17 +24,10 @@ export class Storage {
     // can open the same fresh database while either is still initializing it.
     this.db.transaction(() => {
       const version = this.db.pragma('user_version', {simple: true});
-      if (version > 1) throw new Error('Database schema is newer than this server');
+      if (version > schemaVersion) throw new Error('Database schema is newer than this server');
       if (version !== 0) return;
-      this.db.exec(`
-        CREATE TABLE objects (key TEXT PRIMARY KEY, value TEXT NOT NULL, etag TEXT NOT NULL) STRICT;
-        CREATE TABLE owner (id INTEGER PRIMARY KEY CHECK (id = 1), username TEXT NOT NULL, password TEXT NOT NULL) STRICT;
-        CREATE TABLE sessions (hash TEXT PRIMARY KEY, expires INTEGER NOT NULL) STRICT;
-        CREATE INDEX sessions_expiry ON sessions(expires);
-        CREATE TABLE bootstrap (id INTEGER PRIMARY KEY CHECK (id = 1), hash TEXT NOT NULL, expires INTEGER NOT NULL, purpose TEXT NOT NULL) STRICT;
-        CREATE TABLE limits (key TEXT PRIMARY KEY, start INTEGER NOT NULL, count INTEGER NOT NULL) STRICT;
-      `);
-      this.db.pragma('user_version = 1');
+      this.db.exec(schemaSql);
+      this.db.pragma('user_version = ' + schemaVersion);
     }).immediate();
     this.statements = {
       get: this.db.prepare('SELECT value, etag FROM objects WHERE key = ?'),

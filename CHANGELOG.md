@@ -3,6 +3,12 @@
 Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 
+## [Unreleased]
+
+### Fixed
+
+- Validate the complete staged restore schema before replacing an instance database, and include committed WAL changes in the restored snapshot.
+
 ## [0.11.1] - 2026-10-17
 
 ### Fixed

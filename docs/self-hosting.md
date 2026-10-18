@@ -15,9 +15,11 @@ The Compose file binds the dashboard to `127.0.0.1:8080`. Use a reverse proxy on
 
 ## Install
 
-When a versioned release is available, use its deployment archive from [GitHub Releases](https://github.com/bthall/crowsnest/releases). It contains a Compose file pinned to the tested multi-platform image digest, an empty configuration example, instructions, and the MIT license. Verify the accompanying `SHA256SUMS` before extracting. While the repository and registry remain private, repository access and GHCR read authentication are required. Public publication is an owner decision.
+The source repository and downloads from [GitHub Releases](https://github.com/bthall/crowsnest/releases) are public. Each versioned deployment archive contains a Compose file pinned to the tested multi-platform image digest, an empty configuration example, instructions, and the MIT license. Verify the accompanying `SHA256SUMS` before extracting.
 
-The source-build path below remains available and requires access to this repository.
+The archive pulls its image from `ghcr.io/bthall/crowsnest`. Registry access is separate from repository visibility. If the pull is denied, authenticate to GHCR with an account that has package read access, or build from the public source below. Public source access alone does not grant access to a private registry package.
+
+The source-build path below builds the dashboard locally and does not require access to the Crowsnest GHCR package.
 
 Create a directory under `/srv/docker` owned by your normal user, then clone the repository there. For example:
 

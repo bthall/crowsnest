@@ -20,7 +20,7 @@ const files = [
   'scripts/check-details.mjs',
   'scripts/check-resources.mjs',
   'scripts/check-resilience.mjs', 'scripts/test-storage.mjs',
-  'scripts/check-standalone.mjs', 'scripts/check-docker.mjs',
+  'scripts/check-standalone.mjs', 'scripts/check-restore.mjs', 'scripts/check-docker.mjs',
   'scripts/check-proxy.mjs',
   'scripts/check-secret-scanner.mjs',
   'scripts/check-release.mjs', 'scripts/release.mjs', 'compose.yaml', 'CHANGELOG.md',
@@ -34,7 +34,7 @@ const files = [
   'worker/versions.js',
   'worker/collector.py', 'worker/proxy.cfg', 'worker/compose.yaml', 'worker/setup.sh',
   'worker/assets/crowsnest-mark.png', 'worker/assets/README.md',
-  'LICENSE', 'server/storage.mjs', 'server/auth.mjs', 'server/config.mjs',
+  'LICENSE', 'server/storage.mjs', 'server/schema.mjs', 'server/auth.mjs', 'server/config.mjs',
   'server/runtime.mjs', 'server/index.mjs', 'server/cli.mjs', 'server/lock.mjs',
   'server/auth.html', 'server/auth.js', 'server/auth.css',
 ];

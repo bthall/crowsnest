@@ -99,7 +99,7 @@ docker compose run --rm --no-deps --entrypoint node crowsnest server/cli.mjs res
 docker compose up -d
 ```
 
-Restore verifies database integrity and schema, takes the same process lock as the server, and refuses while the server is running. It replaces the instance database and invalidates restored browser sessions and setup/recovery codes. Sign in again after restart. Restored reporting-token state matches the backup, so a token rotated after the backup may need replacement.
+Restore takes the same process lock as the server and refuses while the server is running. It creates a consistent SQLite snapshot, including committed WAL changes when present, then verifies that snapshot's integrity and complete application schema before replacing the instance database. Incompatible or modified schemas are rejected without replacing the existing database. Successful restore invalidates browser sessions and setup/recovery codes. Sign in again after restart. Restored reporting-token state matches the backup, so a token rotated after the backup may need replacement.
 
 The database is versioned and uses WAL with full synchronous commits. Run one server per data volume. Do not scale multiple replicas against the same files or place SQLite on an unreliable/network filesystem.
 

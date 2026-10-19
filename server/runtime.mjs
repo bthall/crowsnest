@@ -69,7 +69,7 @@ export async function createRuntime(config, {schedule = true, assets} = {}) {
     active++;
     try {
       const rawPath = incoming.url || '/';
-      if (!rawPath.startsWith('/') || rawPath.startsWith('//') || rawPath.length > 8192) return json({error: 'Invalid request target'}, 400);
+      if (!rawPath.startsWith('/') || rawPath.startsWith('//') || rawPath.includes('\\') || rawPath.length > 8192) return json({error: 'Invalid request target'}, 400);
       const url = new URL(config.origin + rawPath);
       if (url.pathname === '/healthz' && incoming.method === 'GET') {
         await storage.run(() => storage.db.prepare('SELECT 1').get());

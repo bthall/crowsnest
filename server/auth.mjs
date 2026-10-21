@@ -8,7 +8,7 @@ const safeEqual = (a, b) => typeof a === 'string' && typeof b === 'string' && a.
 const secret = () => randomBytes(32).toString('base64url');
 const parameters = {N: 131072, r: 8, p: 1, maxmem: 256 * 1024 * 1024};
 const validPassword = password => typeof password === 'string' && password.length >= 12 && password.length <= 128 && Buffer.byteLength(password) <= 512;
-const validUsername = username => typeof username === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9.@_-]{2,63}$/.test(username);
+const validUsername = username => typeof username === 'string' && username.length >= 3 && username.length <= 64 && /^[a-zA-Z0-9][a-zA-Z0-9.@_-]{2,63}$/.test(username);
 
 export class Authentication {
   #hashing = 0;

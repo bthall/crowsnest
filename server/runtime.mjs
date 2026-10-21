@@ -12,6 +12,7 @@ const securityHeaders = {
   'Referrer-Policy': 'no-referrer',
   'X-Frame-Options': 'DENY',
   'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Resource-Policy': 'same-origin',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
   'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
 };
@@ -69,7 +70,7 @@ export async function createRuntime(config, {schedule = true, assets} = {}) {
     active++;
     try {
       const rawPath = incoming.url || '/';
-      if (!rawPath.startsWith('/') || rawPath.startsWith('//') || rawPath.includes('\\') || rawPath.length > 8192) return json({error: 'Invalid request target'}, 400);
+      if (!rawPath.startsWith('/') || rawPath.startsWith('//') || rawPath.includes('\\') || rawPath.length > 8192 || /[\x00-\x1f\x7f]|%00/i.test(rawPath)) return json({error: 'Invalid request target'}, 400);
       const url = new URL(config.origin + rawPath);
       if (url.pathname === '/healthz' && incoming.method === 'GET') {
         await storage.run(() => storage.db.prepare('SELECT 1').get());

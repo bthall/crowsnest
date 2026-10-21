@@ -10,7 +10,7 @@ const VERSION = '__APP_VERSION__';
 // __VERSIONS_SOURCE__
 const STATES = new Set(['running','exited','created','restarting','paused','dead','removing','unknown']);
 const HEALTH = new Set(['healthy','unhealthy','starting','none']);
-const headers = {'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','X-Frame-Options':'DENY','Cross-Origin-Opener-Policy':'same-origin','Permissions-Policy':'camera=(), microphone=(), geolocation=()'};
+const headers = {'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','X-Frame-Options':'DENY','Cross-Origin-Opener-Policy':'same-origin','Cross-Origin-Resource-Policy':'same-origin','Permissions-Policy':'camera=(), microphone=(), geolocation=()'};
 function json(data, status=200) { return new Response(JSON.stringify(data), {status,headers:{...headers,'Content-Type':'application/json'}}); }
 function safeEqual(a,b) { if(typeof a!=='string' || typeof b!=='string' || a.length!==b.length) return false; let c=0; for(let i=0;i<a.length;i++) c |= a.charCodeAt(i) ^ b.charCodeAt(i); return c===0; }
 async function hash(value) { return [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))].map(x=>x.toString(16).padStart(2,'0')).join(''); }

@@ -80,6 +80,7 @@ try {
   await start();
   assert.equal((await request('/healthz', {signed: false, headers: {Host: '127.0.0.1'}})).status, 200);
   assert.equal((await request('/\\example.com', {signed: false})).status, 400);
+  assert.equal((await request('/\x00control', {signed: false})).status, 400);
   assert.equal((await request('/api/hosts', {signed: false})).status, 401);
   assert.equal((await request('/api/hosts', {signed: false, headers: {'oai-authenticated-user-id': 'spoofed', 'OAI-Sites-Authorization': 'Bearer spoofed'}})).status, 401);
   assert.equal((await request('/api/hosts', {headers: {Host: 'attacker.example.com'}})).status, 421);

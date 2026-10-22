@@ -6,17 +6,6 @@ import app from '../dist/server/index.js';
 import {Storage} from './storage.mjs';
 import {Authentication} from './auth.mjs';
 
-const securityHeaders = {
-  'Cache-Control': 'no-store',
-  'X-Content-Type-Options': 'nosniff',
-  'Referrer-Policy': 'no-referrer',
-  'X-Frame-Options': 'DENY',
-  'Cross-Origin-Opener-Policy': 'same-origin',
-  'Cross-Origin-Resource-Policy': 'same-origin',
-  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
-  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
-};
-const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), {status, headers: {...securityHeaders, 'Content-Type': 'application/json', ...headers}});
 
 async function body(request, maximum) {
   if (request.headers['content-encoding'] && request.headers['content-encoding'] !== 'identity') throw Object.assign(new Error('Compressed request bodies are not supported'), {status: 415});
@@ -43,6 +32,19 @@ function objectJson(bytes) {
 }
 
 export async function createRuntime(config, {schedule = true, assets} = {}) {
+  // Defense in depth: Include HTTP Strict Transport Security (HSTS) on HTTPS deployments to prevent protocol downgrade attacks.
+  const securityHeaders = {
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+    'X-Frame-Options': 'DENY',
+    'Cross-Origin-Opener-Policy': 'same-origin',
+    'Cross-Origin-Resource-Policy': 'same-origin',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+    'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+    ...(config.origin.startsWith('https:') ? {'Strict-Transport-Security': 'max-age=63072000'} : {}),
+  };
+  const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), {status, headers: {...securityHeaders, 'Content-Type': 'application/json', ...headers}});
   const storage = new Storage(config.database);
   const authentication = new Authentication(storage, config.origin);
   const authAssets = assets || await Promise.all(['auth.html', 'auth.js', 'auth.css'].map(file => readFile(new URL(file, import.meta.url), 'utf8')));

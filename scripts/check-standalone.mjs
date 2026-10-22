@@ -78,6 +78,10 @@ try {
     await Promise.all(workers.map(w=>w.worker.terminate()));
   }
   await start();
+  // HSTS applies only to this host, including unauthenticated responses.
+  for (const path of ['/healthz', '/login', '/assets/auth.js', '/api/hosts']) {
+    assert.equal((await request(path, {signed: false})).headers.get('strict-transport-security'), 'max-age=63072000');
+  }
   assert.equal((await request('/healthz', {signed: false, headers: {Host: '127.0.0.1'}})).status, 200);
   assert.equal((await request('/\\example.com', {signed: false})).status, 400);
   assert.equal((await request('/\x00control', {signed: false})).status, 400);

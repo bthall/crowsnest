@@ -42,7 +42,7 @@ export async function createRuntime(config, {schedule = true, assets} = {}) {
     'Cross-Origin-Resource-Policy': 'same-origin',
     'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
     'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
-    ...(config.origin.startsWith('https:') ? {'Strict-Transport-Security': 'max-age=63072000; includeSubDomains'} : {}),
+    ...(config.origin.startsWith('https:') ? {'Strict-Transport-Security': 'max-age=63072000'} : {}),
   };
   const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), {status, headers: {...securityHeaders, 'Content-Type': 'application/json', ...headers}});
   const storage = new Storage(config.database);

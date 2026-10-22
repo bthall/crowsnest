@@ -243,6 +243,7 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
       if(!sameOrigin(request))return json({error:'Invalid origin'},403);
       if(!env.BUCKET || !collectorReady(env))return json({error:'Collector setup unavailable'},503);
       let data; try{data=await readJson(request,2048);}catch{return json({error:'Invalid host name'},400);}
+      if(Object.keys(data).some(k=>!['name','format'].includes(k)))return json({error:'Choose a valid host name and format'},400);
       if(!validName(data.name))return json({error:'Use a host name up to 64 characters'},400);
       if(data.format!==undefined && !['compose','script','setup'].includes(data.format))return json({error:'Unknown collector format'},400);
       let cursor,count=0;
@@ -300,6 +301,7 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
         return json({ok:true});
       }
       if(hostRoute[2]==='collector' && request.method==='POST') {
+        if(Object.keys(data).some(k=>k!=='format'))return json({error:'Choose a collector package or configuration'},400);
         if(data.format==='update')return json({updateCommand:collectorUpdate(),collectorVersion:VERSION});
         if(!collectorReady(env))return json({error:'Collector setup unavailable'},503);
         if(!['compose','config','setup'].includes(data.format))return json({error:'Choose a collector package or configuration'},400);

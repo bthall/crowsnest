@@ -246,6 +246,7 @@ async function refresh(selectName) {
   }
 }
 async function loadHosts() {
+  const focused = document.activeElement;
   loading = true; $('refresh').disabled = true; $('refresh-label').textContent = 'Refreshing…';
   try {
     const response = await fetch('/api/hosts', {cache: 'no-store', signal: AbortSignal.timeout(10000)});
@@ -265,6 +266,7 @@ async function loadHosts() {
   } finally {
     loading = false; $('refresh').disabled = false; $('refresh-label').textContent = 'Refresh';
     render();
+    restoreFocus(focused);
     if(view==='activity') loadHistory();
     if(detailSelection && !detailHistoryLoading)loadContainerHistory();
     if($('resource-history').open && (selected || detailSelection) && !resourceLoading)loadResourceHistory();
@@ -381,14 +383,14 @@ function renderResourceHistory() {
 }
 async function loadResourceHistory() {
   const id=detailSelection?.hostId||selected,container=detailSelection?.containerId;if(!id || !$('resource-history').open)return;
-  const sequence=++resourceSequence;resourceController?.abort();resourceController=new AbortController();resourceLoading=true;resourceError='';renderResourceHistory();
+  const sequence=++resourceSequence, focused=document.activeElement;resourceController?.abort();resourceController=new AbortController();resourceLoading=true;resourceError='';renderResourceHistory();
   try {
     const response=await fetch('/api/resources?host='+encodeURIComponent(id)+(container?'&container='+encodeURIComponent(container):''),{cache:'no-store',signal:AbortSignal.any([resourceController.signal,AbortSignal.timeout(10000)])});
     if(!response.ok)throw new Error('Unable to refresh resource history. Earlier readings may be out of date. Choose Retry resources.');
     const data=await response.json();if(!Array.isArray(data.samples))throw new Error('Unexpected resource response. Choose Retry resources.');
     if(sequence===resourceSequence)resourceSamples=data.samples;
   }catch(error){if(sequence===resourceSequence && error.name!=='AbortError')resourceError=error.name==='TimeoutError'?'Resource request timed out. Choose Retry resources.':error.message;}
-  finally{if(sequence===resourceSequence){resourceLoading=false;renderResourceHistory();}}
+  finally{if(sequence===resourceSequence){resourceLoading=false;renderResourceHistory();restoreFocus(focused);}}
 }
 $('resource-history').addEventListener('toggle',()=>{if($('resource-history').open)loadResourceHistory();else{resourceSequence++;resourceController?.abort();resourceLoading=false;}});
 $('resource-retry').onclick=loadResourceHistory;
@@ -422,7 +424,7 @@ function renderContainerDetails() {
 }
 async function loadContainerHistory() {
   if(!detailSelection)return;
-  const sequence=++detailHistorySequence,{hostId,containerId}=detailSelection;
+  const sequence=++detailHistorySequence,{hostId,containerId}=detailSelection, focused=document.activeElement;
   detailHistoryController?.abort();detailHistoryController=new AbortController();
   detailHistoryLoading=true;detailHistoryError='';renderContainerDetails();
   try {
@@ -431,7 +433,7 @@ async function loadContainerHistory() {
     const data=await response.json();if(!Array.isArray(data.events))throw new Error('Unexpected activity response. Choose Retry activity.');
     if(sequence===detailHistorySequence){detailEvents=data.events;detailLegacyMatches=!!data.legacyMatches;}
   }catch(error){if(sequence===detailHistorySequence && error.name!=='AbortError')detailHistoryError=error.name==='TimeoutError'?'Activity request timed out. Choose Retry activity.':error.message;}
-  finally{if(sequence===detailHistorySequence){detailHistoryLoading=false;renderContainerDetails();}}
+  finally{if(sequence===detailHistorySequence){detailHistoryLoading=false;renderContainerDetails();restoreFocus(focused);}}
 }
 $('close-details').onclick=()=>closeContainerDetails();$('detail-history-retry').onclick=loadContainerHistory;
 $('container-details').addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();closeContainerDetails();}});
@@ -493,6 +495,11 @@ async function mutate(path,method,data) {
   return response;
 }
 function showError(id,error) {$(id).textContent=error.message;$(id).hidden=false;}
+function restoreFocus(focused) {
+  if (focused && typeof focused.focus === 'function' && document.body.contains(focused) && (!document.activeElement || document.activeElement === document.body)) {
+    focused.focus({ preventScroll: true });
+  }
+}
 function setupStage(stage) {
   for(const [index,id] of ['name','deploy','start','report'].entries()) {
     $('step-'+id).removeAttribute('aria-current');
@@ -620,11 +627,11 @@ function updateMaintenance() {
   $('maintenance-end').hidden=!active;$('maintenance-save').textContent=active?'Reset pause timer':'Pause notifications';
 }
 async function setMaintenance(minutes) {
-  const id=managedId, session=managementSession;
+  const id=managedId, session=managementSession, focused=document.activeElement;
   $('maintenance-save').disabled=true;$('maintenance-end').disabled=true;$('management-message').hidden=true;
   try{await mutate('/api/hosts/'+id+'/maintenance','POST',{minutes});await refresh();}
   catch(error){if(managementCurrent(session,id))showError('management-message',error);}
-  finally{if(managementCurrent(session,id)){$('maintenance-save').disabled=false;$('maintenance-end').disabled=false;}}
+  finally{if(managementCurrent(session,id)){$('maintenance-save').disabled=false;$('maintenance-end').disabled=false;restoreFocus(focused);}}
 }
 $('maintenance-save').onclick=()=>setMaintenance(Number($('maintenance-duration').value));
 $('maintenance-end').onclick=()=>setMaintenance(0);
@@ -716,6 +723,7 @@ $('notifications-hostReports').onchange=notificationControls;
 for(const key of signalCheckboxes)$('notifications-'+key).onchange=notificationControls;
 async function loadNotifications() {
   if(notificationBusy)return;
+  const focused=document.activeElement;
   notificationBusy=true;notificationControls();
   try {
     const response=await fetch('/api/notifications',{cache:'no-store',signal:AbortSignal.timeout(10000)});
@@ -730,19 +738,21 @@ async function loadNotifications() {
     $('notification-delivery').textContent=data.lastError?'Delivery failed: '+data.lastError+'. Automatic alerts retry with backoff. Check ntfy access and the runtime token.':data.lastSuccessAt?'Last accepted by ntfy: '+new Date(data.lastSuccessAt).toLocaleString()+'.':'No notifications have been accepted yet.';
     $('notification-delivery').textContent+=' '+(data.lastSweepAt?'Last background check: '+new Date(data.lastSweepAt).toLocaleString()+'.':'No background check recorded. Configure a scheduled sweep for stale-host alerts.');
   }catch(error){notificationConfigured=false;setSubscription(null);$('notification-destination').textContent='Notification settings unavailable.';$('notification-message').textContent=error.message;}
-  finally{notificationBusy=false;notificationControls();}
+  finally{notificationBusy=false;notificationControls();restoreFocus(focused);}
 }
 $('notification-form').onsubmit=async event=>{
-  event.preventDefault();notificationBusy=true;notificationControls();$('notification-message').textContent='Saving…';
+  event.preventDefault();const focused=document.activeElement;
+  notificationBusy=true;notificationControls();$('notification-message').textContent='Saving…';
   try{await mutate('/api/notifications','PATCH',{enabled:$('notifications-enabled').checked,recoveries:$('notifications-recoveries').checked,...Object.fromEntries(['hostReports','unhealthy','restarting','dead',...signalCheckboxes].map(key=>[key,$('notifications-'+key).checked])),...Object.fromEntries(Object.keys(signalValues).map(key=>[key,Number($('notifications-'+key).value)])),staleMinutes:Number($('notifications-delay').value),priority:Number($('notifications-priority').value)});$('notification-message').textContent='Settings saved. Changes apply to the whole fleet.';}
   catch(error){$('notification-message').textContent=error.message;}
-  finally{notificationBusy=false;notificationControls();}
+  finally{notificationBusy=false;notificationControls();restoreFocus(focused);}
 };
 $('notifications-test').onclick=async()=>{
+  const focused=document.activeElement;
   notificationBusy=true;notificationControls();$('notification-message').textContent='Sending test…';
   try{await mutate('/api/notifications/test','POST',{});$('notification-message').textContent='Test accepted by ntfy. Check your subscribed devices.';}
   catch(error){$('notification-message').textContent=error.message;}
-  finally{notificationBusy=false;notificationControls();await loadNotifications();}
+  finally{notificationBusy=false;notificationControls();await loadNotifications();restoreFocus(focused);}
 };
 refresh();
 setInterval(() => {if (!document.hidden) refresh();}, 15000);

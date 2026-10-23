@@ -70,7 +70,11 @@ export class Authentication {
       const owner = this.storage.db.prepare('SELECT username FROM owner').get();
       return !!row && safeEqual(row.hash, hashToken(data.code)) && row.expires > Date.now() && row.purpose === purpose && (purpose === 'setup' ? !owner : owner?.username === data.username);
     });
-    if (!eligible) throw Object.assign(new Error('The code is invalid or expired. Generate a new code on the server.'), {status: 403});
+    if (!eligible) {
+      // Perform dummy hashing to prevent timing attacks that distinguish valid setup/recovery codes.
+      await this.#verify(data.password, this.dummy);
+      throw Object.assign(new Error('The code is invalid or expired. Generate a new code on the server.'), {status: 403});
+    }
     const password = await this.#passwordHash(data.password);
     return this.storage.run(() => {
       const row = this.storage.db.prepare('SELECT * FROM bootstrap WHERE id=1').get();

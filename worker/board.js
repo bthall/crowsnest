@@ -390,7 +390,7 @@ async function loadResourceHistory() {
     const data=await response.json();if(!Array.isArray(data.samples))throw new Error('Unexpected resource response. Choose Retry resources.');
     if(sequence===resourceSequence)resourceSamples=data.samples;
   }catch(error){if(sequence===resourceSequence && error.name!=='AbortError')resourceError=error.name==='TimeoutError'?'Resource request timed out. Choose Retry resources.':error.message;}
-  finally{if(sequence===resourceSequence){resourceLoading=false;renderResourceHistory();restoreFocus(focused);}}
+  finally{if(sequence===resourceSequence){resourceLoading=false;renderResourceHistory();restoreFocus(focused, $('resource-history').querySelector('summary'));}}
 }
 $('resource-history').addEventListener('toggle',()=>{if($('resource-history').open)loadResourceHistory();else{resourceSequence++;resourceController?.abort();resourceLoading=false;}});
 $('resource-retry').onclick=loadResourceHistory;
@@ -433,7 +433,7 @@ async function loadContainerHistory() {
     const data=await response.json();if(!Array.isArray(data.events))throw new Error('Unexpected activity response. Choose Retry activity.');
     if(sequence===detailHistorySequence){detailEvents=data.events;detailLegacyMatches=!!data.legacyMatches;}
   }catch(error){if(sequence===detailHistorySequence && error.name!=='AbortError')detailHistoryError=error.name==='TimeoutError'?'Activity request timed out. Choose Retry activity.':error.message;}
-  finally{if(sequence===detailHistorySequence){detailHistoryLoading=false;renderContainerDetails();restoreFocus(focused);}}
+  finally{if(sequence===detailHistorySequence){detailHistoryLoading=false;renderContainerDetails();restoreFocus(focused, $('detail-title'));}}
 }
 $('close-details').onclick=()=>closeContainerDetails();$('detail-history-retry').onclick=loadContainerHistory;
 $('container-details').addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();closeContainerDetails();}});
@@ -495,10 +495,11 @@ async function mutate(path,method,data) {
   return response;
 }
 function showError(id,error) {$(id).textContent=error.message;$(id).hidden=false;}
-function restoreFocus(focused) {
-  if (focused && typeof focused.focus === 'function' && document.body.contains(focused) && (!document.activeElement || document.activeElement === document.body)) {
-    focused.focus({ preventScroll: true });
-  }
+function restoreFocus(focused, fallback) {
+  if (document.activeElement && document.activeElement !== document.body) return;
+  const available = element => element && typeof element.focus === 'function' && document.body.contains(element) && !element.disabled && !element.closest('[hidden], [inert]') && element.getClientRects().length > 0;
+  const target = available(focused) ? focused : available(fallback) ? fallback : null;
+  target?.focus({preventScroll: true});
 }
 function setupStage(stage) {
   for(const [index,id] of ['name','deploy','start','report'].entries()) {

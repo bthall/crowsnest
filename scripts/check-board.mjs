@@ -49,9 +49,11 @@ assert.equal(logo.headers.get('Content-Type'),'image/png');
 assert.deepEqual([...new Uint8Array(await logo.arrayBuffer()).slice(0,8)],[137,80,78,71,13,10,26,10]);
 assert.equal((await call('/assets/crowsnest-mark.png')).status,401);
 assert.equal((await call('/api/hosts',{method:'POST',headers:viewer,body:'{}'})).status,403);
+assert.equal((await call('/api/hosts',{method:'POST',headers:{...viewer,Origin:env.SITE_ORIGIN},body:JSON.stringify({name:'invalid',extra:'field'})})).status,400);
 assert.equal((await call('/api/hosts',{method:'POST',headers:{...viewer,Origin:env.SITE_ORIGIN},body:JSON.stringify({name:'hedwig'})})).status,200);
 const host=JSON.parse([...objects.values()][0]);
 assert.equal(host.name,'hedwig');assert.equal(host.tokenHash.length,64);assert.equal(host.hostToken,undefined);
+assert.equal((await call('/api/hosts/'+host.id+'/collector',{method:'POST',headers:{...viewer,Origin:env.SITE_ORIGIN},body:JSON.stringify({format:'update',extra:'field'})})).status,400);
 // A second host creates the installer used to validate its embedded collector and credentials.
 const result=await call('/api/hosts',{method:'POST',headers:{...viewer,Origin:env.SITE_ORIGIN},body:JSON.stringify({name:'second'})});
 const installer=await result.text();await writeFile(testFile('crowsnest-test-setup.sh'),installer);

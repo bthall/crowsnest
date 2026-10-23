@@ -26,7 +26,9 @@ async function readJson(request, max=131072) {
   const reader=request.body?.getReader(); if(!reader) throw new Error('Missing body');
   const chunks=[]; let size=0;
   while(true) { const {done,value}=await reader.read(); if(done)break; size+=value.length; if(size>max) { await reader.cancel(); throw new Error('Report too large'); } chunks.push(value); }
-  const bytes=new Uint8Array(size); let i=0; for(const c of chunks){bytes.set(c,i); i+=c.length;}
+  let bytes;
+  if(chunks.length===1)bytes=chunks[0];
+  else{bytes=new Uint8Array(size);let i=0;for(const c of chunks){bytes.set(c,i);i+=c.length;}}
   const data=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
   if(!data || typeof data!=='object' || Array.isArray(data))throw new Error('Expected a JSON object');
   return data;

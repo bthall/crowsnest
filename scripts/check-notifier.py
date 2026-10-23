@@ -3,6 +3,7 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location("notifier", Path("notifier/notifier.py"))
 notifier = importlib.util.module_from_spec(spec)
@@ -50,3 +51,23 @@ for config_value in [None, [], {**config, "url": 7}, {**config, "serviceToken": 
     except ValueError:
         pass
 print("Passed: unattended sweep HTTPS/private credentials, redirect denial, bounded responses, and persisted readback verification.")
+
+# Run one real main-loop iteration, then stop at its sleep boundary.
+class StopLoop(Exception):
+    pass
+
+for result in [{"at": timestamp}, ValueError("readback failed")]:
+    with patch.object(notifier.Path, "read_text", return_value=json.dumps(config)), \
+            patch.object(notifier.Path, "touch") as heartbeat, \
+            patch.object(notifier, "sweep") as sweep, \
+            patch.object(notifier.time, "sleep", side_effect=StopLoop):
+        if isinstance(result, Exception):
+            sweep.side_effect = result
+        else:
+            sweep.return_value = result
+        try:
+            notifier.main()
+        except StopLoop:
+            pass
+        assert heartbeat.call_count == (0 if isinstance(result, Exception) else 1)
+print("Passed: notifier heartbeat advances only after a confirmed sweep.")

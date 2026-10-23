@@ -206,6 +206,8 @@ def report(config, opener):
         acknowledgement = read_json(response, 8192)
         if response.status != 200 or not isinstance(acknowledgement, dict) or acknowledgement.get('ok') is not True:
             raise ValueError('Report was not accepted')
+    # Health checks require a delivery accepted by the dashboard.
+    Path('/tmp/crowsnest-last-success').touch()
     print('Status delivered: ' + str(len(data['containers'])) + ' containers', flush=True)
 
 

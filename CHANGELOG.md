@@ -7,6 +7,8 @@ Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 
 ### Fixed
 
+- Pin collector/notifier runtimes and the read-only socket proxy to reviewed image digests. Bound collector/proxy resources and expose delivery-based Docker health checks without additional notifications.
+
 - Validate the complete staged restore schema before replacing an instance database, and include committed WAL changes in the restored snapshot.
 
 ## [0.11.1] - 2026-10-17

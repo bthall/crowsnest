@@ -111,7 +111,8 @@ Automatic alerts and recoveries are suppressed for that host, including backgrou
 
 New collector deployments pin Python 3.13.17 and HAProxy 3.0.30 by image digest.
 The collector has a 96 MiB memory limit, 0.35 CPU limit, and 32-process limit;
-the restricted socket proxy has 32 MiB, 0.25 CPU, and 16 processes. Both retain
+the restricted socket proxy has 32 MiB, 0.25 CPU, and 16 processes. HAProxy uses
+one worker thread so hosts with many CPUs stay within that process budget. Both retain
 the read-only filesystem and dropped capabilities. A 1 MiB temporary filesystem
 holds the collector's last accepted delivery marker.
 

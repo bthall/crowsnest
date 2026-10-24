@@ -44,11 +44,29 @@ class Sink:
 
 class CollectorChecks(unittest.TestCase):
     def setUp(self):
+        self.heartbeat = self.enterContext(patch.object(collector.Path, "touch"))
         self.inspect = json.loads(json.dumps(INSPECT))
         collector.CPU_SAMPLES.clear()
         self.stats = {'id': 'a' * 64, 'cpu_stats': {'cpu_usage': {'total_usage': 100}, 'system_cpu_usage': 1000, 'online_cpus': 4},
                       'memory_stats': {'usage': 1000, 'limit': 2000, 'stats': {'inactive_file': 200}},
                       'networks': {'private': 'must-not-collect'}, 'name': 'must-not-collect'}
+
+    def test_health_requires_accepted_delivery(self):
+        self.report(Sink())
+        self.heartbeat.assert_called_once()
+        self.heartbeat.reset_mock()
+        for reply in [b'{"ok":false}', b'{}', b'[]', b'invalid']:
+            with self.assertRaises(ValueError):
+                self.report(Sink(reply))
+        self.heartbeat.assert_not_called()
+
+    def test_read_only_marker_preserves_delivery_confirmation(self):
+        self.heartbeat.side_effect = OSError('Read-only filesystem')
+        output = io.StringIO()
+        with patch.object(collector, 'get', self.fake_get), contextlib.redirect_stdout(output):
+            collector.report(CONFIG, Sink())
+        self.heartbeat.assert_called_once()
+        self.assertIn('Status delivered: 1 containers', output.getvalue())
 
     def fake_get(self, path, deadline):
         assert deadline > time.monotonic()

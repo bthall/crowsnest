@@ -106,3 +106,24 @@ Keep the previous Compose file until fresh reports confirm the migration. If sta
 Select a host and open **Manage host → Maintenance mode**. Choose 15 minutes, 1 hour, 4 hours, or 24 hours and pause notifications. A banner and host label show the pause. **End maintenance now** resumes early; otherwise the timer expires automatically using server time.
 
 Automatic alerts and recoveries are suppressed for that host, including background stale-host checks. Reports, health indicators, in-app alerts, and activity continue. After expiry or early end, the next report or background sweep evaluates current issues against the last delivered notification state. A failure that appears and clears entirely during the pause sends no false recovery. A previously delivered alert can send a recovery afterward. Manual ntfy tests remain available.
+
+## Container health and resource limits
+
+New collector deployments pin Python 3.13.17 and HAProxy 3.0.30 by image digest.
+The collector has a 96 MiB memory limit, 0.35 CPU limit, and 32-process limit;
+the restricted socket proxy has 32 MiB, 0.25 CPU, and 16 processes. HAProxy uses
+one worker thread so hosts with many CPUs stay within that process budget. Both retain
+the read-only filesystem and dropped capabilities. A 1 MiB temporary filesystem
+holds the collector's last accepted delivery marker.
+
+Docker marks the collector unhealthy after repeated checks find no accepted
+report within 180 seconds. The socket proxy checks its allowed `/version` route.
+An unhealthy status alone does not restart a Docker container. Investigate
+transport, authentication, and resource failures before changing the limits.
+
+Updating a collector preserves its existing Compose file. To adopt these defaults
+on an existing host, compare the current source template with that file, preserve
+its identity and private mounts, and recreate the services after updating both
+code and Compose. Code updates remain compatible with existing heartbeat checks.
+When an older template has no writable marker storage, accepted reports still log
+success; source-only updates do not require adopting the new health check.

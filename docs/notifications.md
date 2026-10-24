@@ -104,3 +104,11 @@ Place the checker on an available host. A checker on a monitored host cannot det
 - **No stale-host alert:** check that notifications are enabled and that background checks continue while the browser and collectors are silent.
 
 Network-mocked CI tests cover private routes, destination restrictions, secret exposure, transitions, recoveries, deduplication, concurrent delivery, retries, pausing, resource timing, restart deltas/resets, missing data, cooldowns, service sweeps, acknowledgements, test rate limiting, and host-removal cleanup. Live setup additionally requires an accepted test and an unattended sweep with persisted readback.
+
+The standalone notifier template pins Python 3.13.17 by digest and keeps its
+64 MiB, 0.25 CPU, and 32-process limits. A 1 MiB `/tmp` filesystem holds a health
+marker written only after the sweep's persisted readback succeeds. Docker health
+checks allow 420 seconds between successful sweeps and do not send extra ntfy
+messages. Health indicates the sweep runner is working; pending ntfy delivery
+errors remain visible in the dashboard. Existing deployments must update their
+Compose file deliberately to adopt the health check and image pin.

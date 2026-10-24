@@ -125,3 +125,5 @@ Updating a collector preserves its existing Compose file. To adopt these default
 on an existing host, compare the current source template with that file, preserve
 its identity and private mounts, and recreate the services after updating both
 code and Compose. Code updates remain compatible with existing heartbeat checks.
+When an older template has no writable marker storage, accepted reports still log
+success; source-only updates do not require adopting the new health check.

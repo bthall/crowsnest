@@ -1,4 +1,5 @@
 """Exercise unattended private writer access without contacting production."""
+import contextlib
 import importlib.util
 import io
 import json
@@ -56,18 +57,26 @@ print("Passed: unattended sweep HTTPS/private credentials, redirect denial, boun
 class StopLoop(Exception):
     pass
 
-for result in [{"at": timestamp}, ValueError("readback failed")]:
+for result, marker_error in [({"at": timestamp}, None), (ValueError("readback failed"), None),
+                             ({"at": timestamp, "lastDeliveryError": True}, OSError("Read-only filesystem"))]:
     with patch.object(notifier.Path, "read_text", return_value=json.dumps(config)), \
-            patch.object(notifier.Path, "touch") as heartbeat, \
+            patch.object(notifier.Path, "touch", side_effect=marker_error) as heartbeat, \
             patch.object(notifier, "sweep") as sweep, \
             patch.object(notifier.time, "sleep", side_effect=StopLoop):
         if isinstance(result, Exception):
             sweep.side_effect = result
         else:
             sweep.return_value = result
-        try:
-            notifier.main()
-        except StopLoop:
-            pass
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            try:
+                notifier.main()
+            except StopLoop:
+                pass
         assert heartbeat.call_count == (0 if isinstance(result, Exception) else 1)
-print("Passed: notifier heartbeat advances only after a confirmed sweep.")
+        if not isinstance(result, Exception):
+            assert "Sweep confirmed:" in output.getvalue()
+            assert "Sweep failed:" not in output.getvalue()
+            if result.get("lastDeliveryError"):
+                assert "ntfy delivery is pending" in output.getvalue()
+print("Passed: confirmed sweeps advance health markers; read-only markers preserve confirmation and delivery diagnostics.")

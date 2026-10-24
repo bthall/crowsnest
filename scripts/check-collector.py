@@ -60,6 +60,14 @@ class CollectorChecks(unittest.TestCase):
                 self.report(Sink(reply))
         self.heartbeat.assert_not_called()
 
+    def test_read_only_marker_preserves_delivery_confirmation(self):
+        self.heartbeat.side_effect = OSError('Read-only filesystem')
+        output = io.StringIO()
+        with patch.object(collector, 'get', self.fake_get), contextlib.redirect_stdout(output):
+            collector.report(CONFIG, Sink())
+        self.heartbeat.assert_called_once()
+        self.assertIn('Status delivered: 1 containers', output.getvalue())
+
     def fake_get(self, path, deadline):
         assert deadline > time.monotonic()
         if path == '/version':

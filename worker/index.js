@@ -224,10 +224,12 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
     if(path==='/api/hosts' && request.method==='GET') {
       if(!env.BUCKET)return json({error:'Storage unavailable'},503);
       const settings=await notificationSettings(env),signalEnabled=settings.cpuAlerts || settings.memoryAlerts || settings.restartBursts;
+      // A host needs three reads, or four with signal alerts; keep at most nine in flight.
+      const hostBatchSize=signalEnabled?2:3;
       const hosts=[]; let cursor;
       do {const list=await env.BUCKET.list({prefix:'hosts/',cursor});
-        for(let i=0;i<list.objects.length;i+=3) {
-          const batch=await Promise.all(list.objects.slice(i,i+3).map(async item=>{
+        for(let i=0;i<list.objects.length;i+=hostBatchSize) {
+          const batch=await Promise.all(list.objects.slice(i,i+hostBatchSize).map(async item=>{
             const id=item.key.startsWith('hosts/') && item.key.endsWith('.json')?item.key.slice(6,-5):null;
             if(!id)return null;
             const [config,snapshot,maintenance,signals]=await Promise.all([

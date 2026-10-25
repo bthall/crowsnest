@@ -5,6 +5,10 @@ Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 
 ## [Unreleased]
 
+### Changed
+
+- Overlap host-list storage reads within a fixed concurrency budget, including when signal alerts are enabled.
+
 ### Fixed
 
 - Validate the complete staged restore schema before replacing an instance database, and include committed WAL changes in the restored snapshot.

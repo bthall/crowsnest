@@ -130,7 +130,7 @@ function renderRows(containers) {
     const observedAt=lastKnown?Date.parse(c.reportAt):Date.now();
     const uptime = c.state === 'running' && Date.parse(c.startedAt) > 0 ? duration(Math.max(0,Math.floor((observedAt-Date.parse(c.startedAt))/1000))) : '—';
     const link=node('button','container-link',c.name);
-    link.dataset.containerKey=c.hostId+':'+c.id;link.setAttribute('aria-label','View '+c.name+' on '+c.hostName);link.onclick=()=>openContainerDetails(c.hostId,c.id);
+    link.dataset.containerKey=c.hostId+':'+c.id;link.onclick=()=>openContainerDetails(c.hostId,c.id);
     name.append(link, node('span', 'image', c.image));
     if(selected===null) name.append(node('span','row-host',c.hostName+(lastKnown?' · last known status':'')));
     if(c.composeService && c.composeService!==c.name)name.append(node('span','image','Service: '+c.composeService));
@@ -167,7 +167,7 @@ function render() {
   $('maintenance-banner').hidden=!paused.length;
   $('maintenance-banner').textContent=host && paused.length?host.name+': '+maintenanceText(host)+'. Health and activity stay visible.':paused.length+' host'+(paused.length===1?' is':'s are')+' in maintenance. Automatic notifications are paused for those hosts; health and activity stay visible.';
   $('search').placeholder=fleet?'Search containers, images, or hosts':'Search containers or images';
-  $('search').setAttribute('aria-label',$('search').placeholder);
+  if($('search-label'))$('search-label').textContent=$('search').placeholder;
   const stale = !!snapshot && age(snapshot.receivedAt) > 120;
   $('containers').setAttribute('aria-busy', String(!loaded && loading));
   $('host-title').textContent = host ? host.name : hostGroup?(hostGroup==='_ungrouped'?'Ungrouped':hostGroup)+' hosts':'All hosts';

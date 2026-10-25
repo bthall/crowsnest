@@ -226,12 +226,19 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
       const settings=await notificationSettings(env),signalEnabled=settings.cpuAlerts || settings.memoryAlerts || settings.restartBursts;
       const hosts=[]; let cursor;
       do {const list=await env.BUCKET.list({prefix:'hosts/',cursor});
-        for(let i=0;i<list.objects.length;i+=5) {
-          const batch=await Promise.all(list.objects.slice(i,i+5).map(async item=>{
-            const config=await env.BUCKET.get(item.key);if(!config)return null;
+        for(let i=0;i<list.objects.length;i+=3) {
+          const batch=await Promise.all(list.objects.slice(i,i+3).map(async item=>{
+            const id=item.key.startsWith('hosts/') && item.key.endsWith('.json')?item.key.slice(6,-5):null;
+            if(!id)return null;
+            const [config,snapshot,maintenance,signals]=await Promise.all([
+              env.BUCKET.get(item.key),
+              env.BUCKET.get('snapshots/'+id+'.json'),
+              hostMaintenance(env.BUCKET,id),
+              signalEnabled?env.BUCKET.get('signals/'+id+'.json'):null
+            ]);
+            if(!config)return null;
             const h=await config.json();
-            const [snapshot,maintenance]=await Promise.all([env.BUCKET.get('snapshots/'+h.id+'.json'),hostMaintenance(env.BUCKET,h.id)]);
-            const report=snapshot?await snapshot.json():null,signals=signalEnabled?await env.BUCKET.get('signals/'+h.id+'.json'):null;
+            const report=snapshot?await snapshot.json():null;
             const active=advancedIssues(report,signals?await signals.json():null,settings).issues;
             const alertSignals=Object.entries(active).map(([key,text])=>({containerId:signalContainer(key),kind:signalKind(key),text}));
             return {id:h.id,name:h.name,group:h.group||'',createdAt:h.createdAt,credentialRevision:h.tokenRevision||0,maintenanceUntil:maintenance.until||null,alertSignals,snapshot:report};

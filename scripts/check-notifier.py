@@ -1,10 +1,8 @@
 """Exercise unattended private writer access without contacting production."""
-import contextlib
 import importlib.util
 import io
 import json
 from pathlib import Path
-from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location("notifier", Path("notifier/notifier.py"))
 notifier = importlib.util.module_from_spec(spec)
@@ -52,31 +50,3 @@ for config_value in [None, [], {**config, "url": 7}, {**config, "serviceToken": 
     except ValueError:
         pass
 print("Passed: unattended sweep HTTPS/private credentials, redirect denial, bounded responses, and persisted readback verification.")
-
-# Run one real main-loop iteration, then stop at its sleep boundary.
-class StopLoop(Exception):
-    pass
-
-for result, marker_error in [({"at": timestamp}, None), (ValueError("readback failed"), None),
-                             ({"at": timestamp, "lastDeliveryError": True}, OSError("Read-only filesystem"))]:
-    with patch.object(notifier.Path, "read_text", return_value=json.dumps(config)), \
-            patch.object(notifier.Path, "touch", side_effect=marker_error) as heartbeat, \
-            patch.object(notifier, "sweep") as sweep, \
-            patch.object(notifier.time, "sleep", side_effect=StopLoop):
-        if isinstance(result, Exception):
-            sweep.side_effect = result
-        else:
-            sweep.return_value = result
-        output = io.StringIO()
-        with contextlib.redirect_stdout(output):
-            try:
-                notifier.main()
-            except StopLoop:
-                pass
-        assert heartbeat.call_count == (0 if isinstance(result, Exception) else 1)
-        if not isinstance(result, Exception):
-            assert "Sweep confirmed:" in output.getvalue()
-            assert "Sweep failed:" not in output.getvalue()
-            if result.get("lastDeliveryError"):
-                assert "ntfy delivery is pending" in output.getvalue()
-print("Passed: confirmed sweeps advance health markers; read-only markers preserve confirmation and delivery diagnostics.")

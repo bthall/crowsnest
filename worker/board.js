@@ -130,7 +130,7 @@ function renderRows(containers) {
     const observedAt=lastKnown?Date.parse(c.reportAt):Date.now();
     const uptime = c.state === 'running' && Date.parse(c.startedAt) > 0 ? duration(Math.max(0,Math.floor((observedAt-Date.parse(c.startedAt))/1000))) : '—';
     const link=node('button','container-link',c.name);
-    link.dataset.containerKey=c.hostId+':'+c.id;link.setAttribute('aria-label',c.name+' on '+c.hostName);link.onclick=()=>openContainerDetails(c.hostId,c.id);
+    link.dataset.containerKey=c.hostId+':'+c.id;link.onclick=()=>openContainerDetails(c.hostId,c.id);
     name.append(link, node('span', 'image', c.image));
     if(selected===null) name.append(node('span','row-host',c.hostName+(lastKnown?' · last known status':'')));
     if(c.composeService && c.composeService!==c.name)name.append(node('span','image','Service: '+c.composeService));
@@ -471,7 +471,7 @@ function renderPanels() {
   const current=alerts(); $('alert-count').textContent=current.length;
   if(view==='alerts') {
     $('alerts-status').textContent=current.length?current.length+' current alert(s)':'No current alerts for this view.';
-    $('alerts-list').replaceChildren(...current.map(a=>{const li=node('li');const button=node('button','event-link',a.host.name);button.setAttribute('aria-label','View '+a.host.name+': '+a.text);button.onclick=()=>{view='containers';selectHost(a.host.id);if(a.containerId)openContainerDetails(a.host.id,a.containerId);};li.append(button,node('p','',a.text));if(inMaintenance(a.host))li.append(node('p','input-help',maintenanceText(a.host)));return li;}));
+    $('alerts-list').replaceChildren(...current.map(a=>{const li=node('li');const button=node('button','event-link',a.host.name);button.onclick=()=>{view='containers';selectHost(a.host.id);if(a.containerId)openContainerDetails(a.host.id,a.containerId);};li.append(button,node('p','',a.text));if(inMaintenance(a.host))li.append(node('p','input-help',maintenanceText(a.host)));return li;}));
   }
   if(view==='activity') {
     $('activity-status').textContent=historyError || (historyLoading?'Loading recent activity…':!historyEvents.length?'No recent changes recorded. Activity will appear as reports arrive.':'Showing '+historyEvents.length+' recent events.');

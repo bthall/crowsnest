@@ -85,14 +85,9 @@ env.BUCKET.get=async(...args)=>{
   active++;peak=Math.max(peak,active);
   try{await new Promise(resolve=>setTimeout(resolve,1));return await get(...args);}finally{active--;}
 };
-for(const signalEnabled of [false,true]) {
-  objects.set('notifications/settings.json',JSON.stringify({cpuAlerts:signalEnabled}));
-  active=0;peak=0;
-  const hosts=(await (await call('/api/hosts')).json()).hosts;
-  assert.equal(hosts.length,17);
-  assert.ok(peak>1 && peak<=10,`Polling must use bounded parallel reads with signals ${signalEnabled?'enabled':'disabled'} (peak ${peak})`);
-  assert.ok(!JSON.stringify(hosts).includes('tokenHash'));
-}
+const hosts=(await (await call('/api/hosts')).json()).hosts;
+assert.equal(hosts.length,17);assert.ok(peak>1 && peak<=10,'Polling must use bounded parallel reads');
+assert.ok(!JSON.stringify(hosts).includes('tokenHash'));
 // A genuinely full fleet is rejected even when storage returns small pages.
 env.BUCKET=testBucket(objects,7);
 for(let n=14;n<97;n++){

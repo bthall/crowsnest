@@ -17,7 +17,7 @@ export class Storage {
     mkdirSync(dirname(filename), {recursive: true, mode: 0o700});
     this.db = new Database(filename, {timeout: 5000});
     chmodSync(filename, 0o600);
-    this.db.pragma('journal_mode = WAL');
+    if (this.db.pragma('journal_mode', {simple: true}) !== 'wal') this.db.pragma('journal_mode = WAL');
     this.db.pragma('synchronous = FULL');
     this.db.pragma('foreign_keys = ON');
     // Acquire the write lock before reading the schema version: a CLI and server

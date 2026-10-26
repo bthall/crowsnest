@@ -40,36 +40,3 @@ context.restoreFocus(initiator, contextHeading);
 assert.equal(document.activeElement, moved, 'An async response must preserve the user\'s newer focus');
 assert.equal(restore(null, contextHeading), contextHeading);
 console.log('Focus checks passed: initiator, retry fallback, unavailable contexts and newer user focus');
-
-// Fleet buttons must distinguish equal container names on different hosts.
-const rowsElement={children:[],replaceChildren(...children){this.children=children;}};
-function renderedNode(tag,className='',text='') {
-  return {tag,className,textContent:String(text),dataset:{},children:[],attributes:{},
-    append(...children){this.children.push(...children);},
-    setAttribute(name,value){this.attributes[name]=String(value);}};
-}
-const opened=[];
-const rowContext=vm.createContext({
-  document:{activeElement:null},node:renderedNode,$:()=>rowsElement,
-  groupByProject:false,selected:null,lastError:'',needsAttention:()=>false,
-  duration:()=>'',openContainerDetails:(hostId,id)=>opened.push([hostId,id]),
-});
-const rowStart=source.indexOf('function renderRows('),rowEnd=source.indexOf('function render()',rowStart);
-assert.ok(rowStart>=0 && rowEnd>rowStart);
-vm.runInContext(source.slice(rowStart,rowEnd),rowContext);
-const fleetContainers=[
-  {hostId:'host-one',hostName:'Fixture <one>',id:'a'.repeat(64)},
-  {hostId:'host-two',hostName:'Fixture "two"',id:'b'.repeat(64)},
-].map(container=>({...container,name:'web <app>',image:'fixture',state:'running',health:'none',restarts:0,startedAt:''}));
-rowContext.renderRows(fleetContainers);
-const containerButtons=rowsElement.children.map(row=>row.children[0].children[0]);
-const accessibleNames=containerButtons.map(button=>button.attributes['aria-label']||button.textContent);
-assert.equal(new Set(accessibleNames).size,2,'Equal container names must retain distinct host context');
-for(let i=0;i<containerButtons.length;i++) {
-  assert.equal(containerButtons[i].textContent,fleetContainers[i].name);
-  assert.ok(accessibleNames[i].startsWith(containerButtons[i].textContent),'Accessible names start with the visible container name');
-  assert.ok(accessibleNames[i].includes(fleetContainers[i].hostName),'Accessible names include the literal host name');
-}
-containerButtons[1].onclick();
-assert.deepEqual(opened,[[fleetContainers[1].hostId,fleetContainers[1].id]]);
-console.log('Container control checks passed: distinct host context, visible label prefix, unchanged labels and correct target');

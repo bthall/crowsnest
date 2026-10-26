@@ -2,7 +2,7 @@ name: crowsnest-collector
 services:
   socket-proxy:
     container_name: crowsnest-socket-proxy
-    image: haproxy:3.0.30-alpine@sha256:cf3af0facf7eb22b9fee463daf0fbc07ead740b8150696dce724264faf7b4318
+    image: haproxy:3.0-alpine
     restart: unless-stopped
     user: "0:0"
     read_only: true
@@ -12,18 +12,9 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./proxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
     networks: [docker-internal]
-    mem_limit: 32m
-    cpus: 0.25
-    pids_limit: 16
-    healthcheck:
-      test: [CMD-SHELL, "wget -q -O /dev/null http://127.0.0.1:2375/version"]
-      interval: 30s
-      timeout: 8s
-      retries: 3
-      start_period: 60s
   collector:
     container_name: crowsnest-collector
-    image: python:3.13.17-alpine@sha256:bf12ecc0bea3f171d55145dd02c78b5eeb09f30ee2ac9cc2b4c9e4e8f5e30741
+    image: python:3.13-alpine
     user: "${COLLECTOR_UID:?Set COLLECTOR_UID in .env}:${COLLECTOR_GID:?Set COLLECTOR_GID in .env}"
     restart: unless-stopped
     command: [python, -u, /app/collector.py]
@@ -37,16 +28,6 @@ services:
       - ./collector.json:/run/config/collector.json:ro
     depends_on: [socket-proxy]
     networks: [docker-internal, outbound]
-    mem_limit: 96m
-    cpus: 0.35
-    pids_limit: 32
-    tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=1m,mode=1777"]
-    healthcheck:
-      test: [CMD, python, -c, "import pathlib,time; p=pathlib.Path('/tmp/crowsnest-last-success'); raise SystemExit(0 if p.exists() and time.time()-p.stat().st_mtime<180 else 1)"]
-      interval: 60s
-      timeout: 8s
-      retries: 3
-      start_period: 120s
 networks:
   docker-internal:
     internal: true

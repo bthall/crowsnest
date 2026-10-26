@@ -58,11 +58,6 @@ def main():
         started = time.monotonic()
         try:
             result = sweep(config, opener)
-            # Mark only sweeps confirmed by persisted readback.
-            try:
-                Path("/tmp/crowsnest-last-success").touch()
-            except OSError:
-                pass  # Older Compose files can lack writable marker storage.
             print("Sweep confirmed: checked={checked} sent={sent} pending={pending} at={at}".format(
                 checked=result.get("checked", 0), sent=result.get("sent", 0),
                 pending=result.get("pending", 0), at=result["at"]), flush=True)

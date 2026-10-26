@@ -5,6 +5,10 @@ Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 
 ## [Unreleased]
 
+### Changed
+
+- Overlap host-list storage reads within a fixed concurrency budget, including when signal alerts are enabled.
+
 ### Fixed
 
 - Pin collector/notifier runtimes and the read-only socket proxy to reviewed image digests. Bound collector/proxy resources and expose delivery-based Docker health checks without additional notifications.

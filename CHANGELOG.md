@@ -5,7 +5,13 @@ Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 
 ## [Unreleased]
 
+### Changed
+
+- Overlap host-list storage reads within a fixed concurrency budget, including when signal alerts are enabled.
+
 ### Fixed
+
+- Pin collector/notifier runtimes and the read-only socket proxy to reviewed image digests. Bound collector/proxy resources and expose delivery-based Docker health checks without additional notifications.
 
 - Keep container button names distinct across hosts with the visible name first, and update the native search label with its active scope.
 - Validate the complete staged restore schema before replacing an instance database, and include committed WAL changes in the restored snapshot.

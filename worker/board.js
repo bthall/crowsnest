@@ -653,7 +653,10 @@ $('rename-form').onsubmit=async event=>{
   catch(error){if(managementCurrent(session,id))showError('management-message',error);}finally{if(managementCurrent(session,id))$('rename-save').disabled=false;}
 };
 $('remove-name').oninput=()=>{$('remove-host').disabled=$('remove-name').value!==hosts.find(h=>h.id===managedId)?.name;};
-$('remove-host').onclick=async()=>{
+$('remove-form').onsubmit=async event=>{
+  event.preventDefault();
+  const host=hosts.find(h=>h.id===managedId);
+  if(!host || $('remove-name').value!==host.name)return;
   const id=managedId, session=managementSession;
   $('remove-host').disabled=true;
   try{await mutate('/api/hosts/'+id,'DELETE',{confirmName:$('remove-name').value});if(managementCurrent(session,id))$('management').close();if(selected===id)selected=null;setupSuccess='Host removed. Stop its collector on the host with docker compose down.';await refresh();}

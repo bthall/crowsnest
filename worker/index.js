@@ -343,8 +343,13 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
       const containerId=url.searchParams.get('container');
       if(containerId) {
         if(!id || !/^[a-f0-9]{64}$/.test(containerId))return json({error:'Choose a host and a valid container'},400);
-        const object=await env.BUCKET.get('hosts/'+id+'.json');if(!object)return json({error:'Unknown host'},404);
-        const host=await object.json(), snapshot=await env.BUCKET.get('snapshots/'+id+'.json'), history=await env.BUCKET.get('history/'+id+'.json');
+        const [object,snapshot,history]=await Promise.all([
+          env.BUCKET.get('hosts/'+id+'.json'),
+          env.BUCKET.get('snapshots/'+id+'.json'),
+          env.BUCKET.get('history/'+id+'.json')
+        ]);
+        if(!object)return json({error:'Unknown host'},404);
+        const host=await object.json();
         const entries=history?await history.json():[];
         const current=snapshot?(await snapshot.json()).containers.find(c=>c.id===containerId):null;
         const name=current?.name || entries.find(e=>e.containerId===containerId)?.containerName;
@@ -360,20 +365,37 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
       }
       const events=[];let cursor;
       if(id) {
-        const object=await env.BUCKET.get('hosts/'+id+'.json');
+        const [object,history]=await Promise.all([
+          env.BUCKET.get('hosts/'+id+'.json'),
+          env.BUCKET.get('history/'+id+'.json')
+        ]);
         if(!object)return json({error:'Unknown host'},404);
-        const host=await object.json(),history=await env.BUCKET.get('history/'+id+'.json');
+        const host=await object.json();
         if(history)for(const e of await history.json())if(Date.parse(e.at)>Date.now()-30*86400000)events.push({...e,hostId:host.id,hostName:host.name});
         events.sort((a,b)=>Date.parse(b.at)-Date.parse(a.at));
         return json({events:events.slice(0,100)});
       }
+      const hostBatchSize=5;
       do {
         const list=await env.BUCKET.list({prefix:'hosts/',cursor});
-        for(const item of list.objects){
-          const object=await env.BUCKET.get(item.key);if(!object)continue;
-          const host=await object.json();if(id && host.id!==id || group!==null && (group==='_ungrouped'?!!host.group:(host.group||'')!==group))continue;
-          const history=await env.BUCKET.get('history/'+host.id+'.json');
-          if(history)for(const e of await history.json())if(Date.parse(e.at)>Date.now()-30*86400000)events.push({...e,hostId:host.id,hostName:host.name});
+        for(let i=0;i<list.objects.length;i+=hostBatchSize) {
+          const batch=await Promise.all(list.objects.slice(i,i+hostBatchSize).map(async item=>{
+            const hostId=item.key.startsWith('hosts/') && item.key.endsWith('.json')?item.key.slice(6,-5):null;
+            if(!hostId)return null;
+            const [config,history]=await Promise.all([
+              env.BUCKET.get(item.key),
+              env.BUCKET.get('history/'+hostId+'.json')
+            ]);
+            if(!config)return null;
+            const host=await config.json();
+            if(group!==null && (group==='_ungrouped'?!!host.group:(host.group||'')!==group))return null;
+            const entries=history?await history.json():[];
+            return {host,entries};
+          }));
+          for(const item of batch) {
+            if(!item)continue;
+            for(const e of item.entries)if(Date.parse(e.at)>Date.now()-30*86400000)events.push({...e,hostId:item.host.id,hostName:item.host.name});
+          }
         }
         cursor=list.truncated?list.cursor:undefined;
       }while(cursor);

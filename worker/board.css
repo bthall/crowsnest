@@ -16,8 +16,8 @@
 body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
 ::selection { background: #58442b; color: #fff8ed; }
 button, input, select, textarea { font: inherit; }
-select { width: 100%; padding: 10px 12px; min-height: 42px; color: var(--text); background: var(--raised); border: 1px solid #4b5b69; border-radius: 6px; }
-textarea { width: 100%; background: #0f1821; color: var(--text); padding: 12px; border: 1px solid var(--line); border-radius: 6px; font: 12px/1.6 ui-monospace, monospace; }
+select { width: 100%; padding: 10px 12px; min-height: 42px; color: var(--text); background: var(--raised); border: 1px solid #68798a; border-radius: 6px; }
+textarea { width: 100%; background: #0f1821; color: var(--text); padding: 12px; border: 1px solid #68798a; border-radius: 6px; font: 12px/1.6 ui-monospace, monospace; }
 .subscription-steps { padding-left: 22px; font-size: 13px; color: var(--muted); }
 .subscription-steps li { margin: 10px 0; }
 .project-heading th { background: #202c36; color: var(--text); white-space: normal; overflow-wrap: anywhere; padding-block: 12px; }
@@ -175,7 +175,7 @@ p { margin: 6px 0 0; color: var(--muted); }
 .table-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 16px 24px; border-bottom: 1px solid var(--line); }
 .search { position: relative; flex: 1; max-width: 380px; }
 .search > svg { position: absolute; left: 11px; top: 12px; color: var(--muted); pointer-events: none; }
-input { width: 100%; min-width: 0; background: #0f1821; color: var(--text); border: 1px solid #4b5b69; padding: 10px 12px; border-radius: 6px; min-height: 42px; }
+input { width: 100%; min-width: 0; background: #0f1821; color: var(--text); border: 1px solid #68798a; padding: 10px 12px; border-radius: 6px; min-height: 42px; }
 input::placeholder { color: #abb7c1; opacity: 1; }
 .search input { padding-left: 36px; font-size: 13px; }
 .filter { font-size: 12px; background: transparent; gap: 10px; white-space: nowrap; }

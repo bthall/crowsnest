@@ -38,11 +38,10 @@ async function recordResources(bucket,id,report) {
     const index=samples.findIndex(s=>Math.floor(Date.parse(s.at)/RESOURCE_WINDOW)===window);
     if(index>=0){if(Date.parse(samples[index].at)>now)return;samples[index]=entry;}else samples.push(entry);
     samples.sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
-    const parts=samples.slice(-288).map(s=>JSON.stringify(s));
-    const sizes=parts.map(s=>new TextEncoder().encode(s).length+1);
-    let size=sizes.reduce((n,s)=>n+s,1);
-    while(size>RESOURCE_MAX_BYTES && parts.length>1){size-=sizes.shift();parts.shift();}
-    const written=await bucket.put(key,'['+parts.join(',')+']',{onlyIf:object?{etagMatches:object.etag}:{etagDoesNotMatch:'*'}});
+    let slice=samples.slice(-288), payload=JSON.stringify(slice);
+    let size=new TextEncoder().encode(payload).length;
+    while(size>RESOURCE_MAX_BYTES && slice.length>1){slice.shift();payload=JSON.stringify(slice);size=new TextEncoder().encode(payload).length;}
+    const written=await bucket.put(key,payload,{onlyIf:object?{etagMatches:object.etag}:{etagDoesNotMatch:'*'}});
     if(written)return;
   }
   throw new Error('Resource history changed');

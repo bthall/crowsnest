@@ -38,17 +38,16 @@ async function recordResources(bucket,id,report) {
     const index=samples.findIndex(s=>Math.floor(Date.parse(s.at)/RESOURCE_WINDOW)===window);
     if(index>=0){if(Date.parse(samples[index].at)>now)return;samples[index]=entry;}else samples.push(entry);
     samples.sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
-    const slice=samples.slice(-288);
-    let payload=JSON.stringify(slice);
-    if(new TextEncoder().encode(payload).length>RESOURCE_MAX_BYTES) {
-      const items=slice.map(s=>JSON.stringify(s)), encoder=new TextEncoder();
-      let total=2, count=0;
-      for(let i=items.length-1;i>=0;i--) {
-        const itemSize=encoder.encode(items[i]).length+(count>0?1:0);
-        if(total+itemSize>RESOURCE_MAX_BYTES)break;
-        total+=itemSize; count++;
-      }
-      payload='['+items.slice(-count).join(',')+']';
+    let slice=samples.slice(-288), payload=JSON.stringify(slice);
+    const byteLength=value=>typeof Buffer!=='undefined'?Buffer.byteLength(value):new TextEncoder().encode(value).length;
+    if(byteLength(payload)>RESOURCE_MAX_BYTES && slice.length>1) {
+      // Keep the usual single-pass path, but bound overflow work: repeatedly
+      // serializing the shrinking array is quadratic for dense histories.
+      const sizes=slice.map(sample=>byteLength(JSON.stringify(sample))+1);
+      let size=sizes.reduce((total,n)=>total+n,1), first=0;
+      while(size>RESOURCE_MAX_BYTES && first<slice.length-1)size-=sizes[first++];
+      slice=slice.slice(first);
+      payload=JSON.stringify(slice);
     }
     const written=await bucket.put(key,payload,{onlyIf:object?{etagMatches:object.etag}:{etagDoesNotMatch:'*'}});
     if(written)return;
@@ -65,3 +64,4 @@ function resourceReadings(samples,container) {
   if(first<0)return [];
   return readings.slice(first).map(({present,...sample})=>sample);
 }
+

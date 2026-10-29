@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
+import vm from 'node:vm';
 import {testBucket} from './test-storage.mjs';
 const source=await readFile('dist/server/index.js','utf8');
 const worker=(await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'))).default;
@@ -71,6 +72,27 @@ objects.set('resources/dense.json',JSON.stringify(Array.from({length:288},(_,i)=
 await recordResources(bucket,'dense',{receivedAt:new Date(now).toISOString(),resourceSampling:'complete',containers:denseContainers});
 assert.ok(Buffer.byteLength(objects.get('resources/dense.json'))<=2097152);
 const bounded=JSON.parse(objects.get('resources/dense.json'));assert.ok(bounded.length<288);assert.equal(bounded.at(-1).containers.length,250);
+// Both Worker and Node byte counters must retain the same maximal UTF-8 suffix.
+// Bound serialization volume as well: dense overflow must not repeatedly encode
+// nearly the entire history while dropping one sample at a time.
+const unicodePoints=densePoints.map((point,i)=>['界😀'.repeat(12)+'-'+i,...point.slice(1)]);
+const overflowHistory=Array.from({length:288},(_,i)=>({at:new Date(now-(287-i)*300000).toISOString(),cpuPercent:250,memoryBytes:262144000,containers:unicodePoints}));
+async function overflowResult(withBuffer) {
+  let serialized=0,initial=0,written;
+  const json={parse:JSON.parse,stringify(value){const text=JSON.stringify(value);if(!initial)initial=text.length;serialized+=text.length;return text;}};
+  const context={Date,TextEncoder,JSON:json,...(withBuffer?{Buffer}:{})};
+  const record=vm.runInNewContext(helpers+'\nrecordResources',context);
+  const storage={async get(){return {etag:'overflow-fixture',async json(){return overflowHistory;}};},async put(_key,payload){written=payload;return {};}};
+  await record(storage,'overflow',{receivedAt:new Date(now).toISOString(),resourceSampling:'complete',containers:denseContainers});
+  assert.ok(serialized<=initial*3,'Overflow serialization work must stay proportional to the input size');
+  assert.ok(Buffer.byteLength(written)<=2097152,'History must be bounded by UTF-8 bytes, not character count');
+  const retained=JSON.parse(written),start=overflowHistory.findIndex(sample=>sample.at===retained[0].at);
+  assert.ok(start>0);
+  assert.deepEqual(retained.map(sample=>sample.at),overflowHistory.slice(start).map(sample=>sample.at));
+  assert.ok(Buffer.byteLength(JSON.stringify([overflowHistory[start-1],...retained]))>2097152,'Overflow must retain the largest suffix that fits');
+  return written;
+}
+assert.equal(await overflowResult(true),await overflowResult(false),'Buffer and TextEncoder histories must match');
 // Group changes preserve credential rotation and old name-only clients preserve groups.
 assert.equal((await call('/api/hosts/'+id,'PATCH',{name:'lighthouse',group:'Production'})).status,200);
 assert.equal((await (await call('/api/hosts')).json()).hosts[0].group,'Production');

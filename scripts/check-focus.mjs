@@ -39,4 +39,7 @@ document.activeElement = moved;
 context.restoreFocus(initiator, contextHeading);
 assert.equal(document.activeElement, moved, 'An async response must preserve the user\'s newer focus');
 assert.equal(restore(null, contextHeading), contextHeading);
+
+assert.ok(source.includes("restoreFocus(focused, $('fleet-view'))"), 'loadHosts must restore focus with fleet-view as the fallback element');
+
 console.log('Focus checks passed: initiator, retry fallback, unavailable contexts and newer user focus');

@@ -136,7 +136,8 @@ To turn automatic updates off:
 ```
 
 This disables policy before stopping the timer. It does not cancel an already
-running, locked update. Check the last result before shutting down the host.
+running update. If another operation holds the manager lock, wait for it to finish
+and retry disablement. Check the last result before shutting down the host.
 Enabling or disabling updates does not change dashboard notification maintenance
 mode; notification pauses remain a separate dashboard control.
 
@@ -170,3 +171,8 @@ and do not restart existing hosts.
 First-time GHCR packages may be private. The repository owner must configure public
 read access or provision registry authentication before hosts can pull them. A
 published GitHub manifest alone does not establish registry visibility.
+
+The host manager itself is refreshed by the dashboard's prepared update command
+or by copying `crowsnest` from a reviewed management archive. Image updates do not
+silently replace the host-side executable. A future protocol unsupported by the
+installed manager requires refreshing it explicitly before migrating.

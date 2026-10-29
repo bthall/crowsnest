@@ -16,6 +16,7 @@ const files = [
   'scripts/check-enrollment.mjs',
   'scripts/check-collector-release.mjs', 'scripts/collector-release.mjs',
   'scripts/check-update-status.mjs', 'scripts/check-updater.py',
+  'scripts/check-updater-engine.py',
   'collector/version.json', 'collector/crowsnest', 'collector/compose.yaml',
   'collector/Dockerfile', 'collector/Dockerfile.proxy',
   'scripts/check-notifications.mjs',

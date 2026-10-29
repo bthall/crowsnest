@@ -9,7 +9,7 @@ delete env.SUDO_UID;
 delete env.SUDO_GID;
 let code=0;
 try {
-  for(const script of ['scripts/check-collector-release.mjs','scripts/check-update-status.mjs','scripts/check-updater.py']) {
+  for(const script of ['scripts/check-collector-release.mjs','scripts/check-update-status.mjs','scripts/check-updater.py','scripts/check-updater-engine.py']) {
     const result=spawnSync(script.endsWith('.py')?'python3':process.execPath,[script],{env:{...env,PYTHONDONTWRITEBYTECODE:'1'},stdio:'inherit'});
     if(result.error)throw result.error;
     if(result.status!==0){process.exitCode=result.status??1;throw new Error('Collector update checks failed: '+script);}

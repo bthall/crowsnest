@@ -55,3 +55,5 @@ jobs:
             -c "import runpy; c=runpy.run_path('/app/collector.py'); assert '__' not in c['COLLECTOR_VERSION']; assert int(c['COLLECTOR_PROTOCOL']) == 1"
           docker run --rm --network none crowsnest-socket-proxy:ci \
             haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg
+      - name: Verify actual migration, report delivery, and rollback
+        run: python3 scripts/check-updater-docker.py

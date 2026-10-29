@@ -7,6 +7,8 @@
 !scripts/build-board.mjs
 !worker/
 !worker/**
+!collector/
+!collector/**
 !server/
 !server/**
 **/node_modules

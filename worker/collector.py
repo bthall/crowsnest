@@ -7,11 +7,14 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 from threading import Event, Lock
 
 DOCKER = 'http://socket-proxy:2375'
-COLLECTOR_VERSION = '__APP_VERSION__'
+COLLECTOR_VERSION = '__COLLECTOR_VERSION__'
+COLLECTOR_PROTOCOL = '__COLLECTOR_PROTOCOL__'
+UPDATE_STATUS_PATH = Path('/run/crowsnest/update-status.json')
 MAX_CONTAINERS = 250
 MAX_REPORT_BYTES = 131072
 INSPECTION_WORKERS = 4
@@ -23,6 +26,42 @@ CPU_LOCK = Lock()
 
 def nonnegative_int(value):
     return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 9007199254740991
+
+
+def update_status():
+    """Read only public updater metadata; malformed optional status cannot stop reports."""
+    try:
+        with UPDATE_STATUS_PATH.open('rb') as source:
+            raw = source.read(4097)
+        if len(raw) > 4096:
+            return None
+        value = json.loads(raw)
+        if not isinstance(value, dict) or not isinstance(value.get('autoUpdates'), bool):
+            return None
+        status = {'autoUpdates': value['autoUpdates']}
+        for key in ('lastAttempt', 'lastResult', 'fromVersion', 'toVersion', 'rollback'):
+            field = value.get(key)
+            if field is None:
+                status[key] = None
+                continue
+            if not isinstance(field, str):
+                return None
+            if key == 'lastAttempt':
+                valid = len(field) <= 32 and re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?(?:Z|\+00:00)', field)
+                if valid:
+                    datetime.fromisoformat(field.replace('Z', '+00:00'))
+            elif key == 'lastResult':
+                valid = field in ('updated', 'rolled_back', 'failed', 'rollback_failed', 'no_update')
+            elif key == 'rollback':
+                valid = field in ('not_needed', 'succeeded', 'failed')
+            else:
+                valid = len(field) <= 64 and re.fullmatch(r'(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*)?(?:\+[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*)?', field)
+            if not valid:
+                return None
+            status[key] = field
+        return status
+    except (OSError, ValueError, TypeError):
+        return None
 
 
 def resource_values(data, container, sampled_at):
@@ -183,17 +222,24 @@ def collect():
         result = [c for c in pool.map(inspect, ids) if c is not None]
     return {'containers': result, 'engineVersion': version.get('Version', 'unknown'),
             'collectorVersion': COLLECTOR_VERSION,
+            'collectorProtocol': int(COLLECTOR_PROTOCOL),
             'resourceSampling': collect_resources(prefix, api_version, result, deadline)}
 
 
 def report(config, opener):
     endpoint = check_config(config)
     data = collect()
+    status = update_status()
+    if status is not None:
+        data['updateStatus'] = status
     body = json.dumps(data).encode()
     if len(body) > MAX_REPORT_BYTES and 'resourceSampling' in data:
         for container in data['containers']:
             container.pop('resources', None)
         data['resourceSampling'] = 'report_limit'
+        body = json.dumps(data).encode()
+    if len(body) > MAX_REPORT_BYTES:
+        data.pop('updateStatus', None)
         body = json.dumps(data).encode()
     if len(body) > MAX_REPORT_BYTES:
         raise ValueError('Report exceeds the dashboard limit')

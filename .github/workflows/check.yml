@@ -39,3 +39,19 @@ jobs:
       - run: docker build --tag crowsnest:ci .
       - run: node scripts/check-docker.mjs crowsnest:ci
       - run: node scripts/check-proxy.mjs
+  collector-images:
+    name: Collector image packaging
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: docker build --file collector/Dockerfile --tag crowsnest-collector:ci .
+      - run: docker build --file collector/Dockerfile.proxy --tag crowsnest-socket-proxy:ci .
+      - name: Validate packaged collector and restricted proxy
+        run: |
+          docker run --rm --network none --entrypoint python crowsnest-collector:ci \
+            -c "import runpy; c=runpy.run_path('/app/collector.py'); assert '__' not in c['COLLECTOR_VERSION']; assert int(c['COLLECTOR_PROTOCOL']) == 1"
+          docker run --rm --network none crowsnest-socket-proxy:ci \
+            haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg

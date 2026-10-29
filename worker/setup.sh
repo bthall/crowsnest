@@ -57,8 +57,9 @@ __WRITE_FILES__
 printf 'COLLECTOR_UID=%s\nCOLLECTOR_GID=%s\n' "$owner_uid" "$owner_gid" > .env
 chmod 0600 collector.json .env
 chmod 0644 compose.yaml collector.py proxy.cfg
+chmod 0700 crowsnest
 if [[ "$EUID" == 0 ]]; then
-    chown "$owner_uid:$owner_gid" -- . compose.yaml collector.py proxy.cfg collector.json .env
+    chown "$owner_uid:$owner_gid" -- . compose.yaml collector.py proxy.cfg crowsnest collector.json .env
 fi
 "${DOCKER[@]}" compose config --quiet
 if [[ "${CROWSNEST_PREPARE_ONLY:-0}" == 1 ]]; then

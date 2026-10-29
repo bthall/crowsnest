@@ -34,6 +34,8 @@ try {
   assert.equal(statSync(path.join(target,'collector.json')).mode&0o777,0o600);
   assert.equal(statSync(path.join(target,'.env')).mode&0o777,0o600);
   assert.equal(statSync(path.join(target,'proxy.cfg')).mode&0o777,0o644);
+  assert.equal(statSync(path.join(target,'crowsnest')).mode&0o777,0o700);
+  assert.equal(readFileSync(path.join(target,'crowsnest'),'utf8'),readFileSync('collector/crowsnest','utf8')+'\n');
   const compose=readFileSync(path.join(target,'compose.yaml'),'utf8');
   assert.match(compose,/name: crowsnest-collector\n/);
   assert.match(compose,/container_name: crowsnest-collector/);

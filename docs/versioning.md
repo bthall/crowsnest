@@ -1,11 +1,23 @@
 # Versioning and releases
 
 Crowsnest uses [Semantic Versioning 2.0.0](https://semver.org/): `MAJOR.MINOR.PATCH`.
-`package.json` is the source of truth. The lockfile, dashboard footer, and bundled collector use the same version. Assembly replaces the collector template version marker before setup/update delivery. Run `npm run build` before distributing the collector; the raw template is not an installable version-stamped collector.
+`package.json` is the source of truth for the dashboard; its lockfile and footer match.
+`collector/version.json` independently records the collector version and reporting
+protocol. Assembly replaces both version markers before setup/update delivery.
+Run `npm run build` before distributing templates; raw collector source is not
+an installable version-stamped collector. Collector image builds stamp the same
+metadata directly from `collector/version.json`.
 
 ## Compatibility contract
 
-Compatibility covers the collector report format and ingestion route, collector configuration keys, installation arguments and filenames, Compose service names, and stored host records. A visual change does not require reinstalling collectors. Older collectors may omit `collectorVersion`; the dashboard labels them unknown. Supplied versions use strict SemVer precedence, including prereleases and ignoring build metadata. Update guidance compares against the deployed dashboard bundle, not the latest GitHub release. Site publication numbers identify hosted builds and are separate from product versions.
+Compatibility covers the collector report format and ingestion route, collector configuration keys, installation arguments and filenames, Compose service names, and stored host records. A visual change does not require reinstalling collectors. Older collectors may omit `collectorVersion` and protocol; the dashboard labels missing values unknown. Supplied report versions use strict SemVer precedence, including prereleases and ignoring build metadata. Update guidance compares against the independent collector version bundled with the deployed dashboard. Protocol support determines required upgrades separately. Site publication numbers identify hosted builds and are separate from product versions.
+
+Collector images use stable `collector-v<version>` GitHub releases and separate
+GHCR image repositories. Bump `collector/version.json` when releasing collector,
+proxy, or updater changes; a dashboard-only change does not advance it. The host
+manager checks actual published release manifests before updating. See
+[collector updates](collector-updates.md) for the release gate, opt-in scheduling,
+and migration contract.
 
 During initial development (`0.x.y`), a minor release may introduce a documented incompatible change. Patch releases contain compatible fixes. An incompatible change must include release notes and instructions for affected users. The retirement of the one-time relocation endpoint is part of `0.2.0`; existing collectors continue reporting through the same ingestion route.
 

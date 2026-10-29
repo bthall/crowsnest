@@ -266,7 +266,7 @@ async function loadHosts() {
   } finally {
     loading = false; $('refresh').disabled = false; $('refresh-label').textContent = 'Refresh';
     render();
-    restoreFocus(focused);
+    restoreFocus(focused, $('fleet-view'));
     if(view==='activity') loadHistory();
     if(detailSelection && !detailHistoryLoading)loadContainerHistory();
     if($('resource-history').open && (selected || detailSelection) && !resourceLoading)loadResourceHistory();

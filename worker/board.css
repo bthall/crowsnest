@@ -236,7 +236,7 @@ dialog { width: min(500px, calc(100% - 32px)); max-height: calc(100% - 48px); ov
 .package-details dt { font-weight: 650; margin-top: 12px; }
 .package-details dd { margin: 4px 0 0; color: var(--muted); }
 .setup-copy-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 18px; }
-#setup-copy-status, #transfer-copy-status, #deploy-copy-status { font-size: 12px; color: var(--muted); flex: 1 1 180px; }
+#setup-copy-status { font-size: 12px; color: var(--muted); flex: 1 1 180px; }
 #setup-copy-text { width: 100%; box-sizing: border-box; resize: vertical; padding: 12px; background: #0f1821; color: var(--text); border: 1px solid var(--line); border-radius: 6px; font: 12px/1.6 ui-monospace, monospace; }
 #setup-copy-text:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .download-link { display: inline-flex; min-height: 42px; align-items: center; padding: 9px 14px; border: 1px solid #89704e; border-radius: 6px; background: #30291f; font-weight: 600; font-size: 13px; margin: 10px 0; text-decoration: none; }

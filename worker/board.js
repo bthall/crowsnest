@@ -266,7 +266,7 @@ async function loadHosts() {
   } finally {
     loading = false; $('refresh').disabled = false; $('refresh-label').textContent = 'Refresh';
     render();
-    restoreFocus(focused, $('fleet-view'));
+    restoreFocus(focused);
     if(view==='activity') loadHistory();
     if(detailSelection && !detailHistoryLoading)loadContainerHistory();
     if($('resource-history').open && (selected || detailSelection) && !resourceLoading)loadResourceHistory();
@@ -528,7 +528,7 @@ function setupCurrent(session) {return $('setup').open && setupSession===session
 function managementCurrent(session,id) {return $('management').open && managementSession===session && managedId===id;}
 function clearSetupPackage() {
   if(packageUrl){URL.revokeObjectURL(packageUrl);packageUrl=null;}
-  setupCommand='';$('setup-copy-text').value='';$('setup-copy-fallback').hidden=true;$('setup-copy-status').textContent='';$('deploy-copy-status').textContent='';$('transfer-copy-status').textContent='';$('package-download').removeAttribute('href');
+  setupCommand='';$('setup-copy-text').value='';$('setup-copy-fallback').hidden=true;$('setup-copy-status').textContent='';$('package-download').removeAttribute('href');
 }
 async function preparePackage(response,name,resumed,session) {
   if(!setupCurrent(session)){await response.body?.cancel();return;}
@@ -538,7 +538,7 @@ async function preparePackage(response,name,resumed,session) {
   const archive=Uint8Array.from(atob(data.packageBase64),c=>c.charCodeAt(0));
   if(packageUrl)URL.revokeObjectURL(packageUrl);
   enrollmentId=data.hostId;setupCommand=data.setupCommand;
-  $('setup-copy-text').value='';$('setup-copy-fallback').hidden=true;$('setup-copy-status').textContent='';$('deploy-copy-status').textContent='';$('transfer-copy-status').textContent='';$('transfer-details').open=false;
+  $('setup-copy-text').value='';$('setup-copy-fallback').hidden=true;$('setup-copy-status').textContent='';$('transfer-details').open=false;
   $('copy-deploy').textContent='Copy start commands';$('copy-transfer').textContent='Copy commands';
   packageUrl=URL.createObjectURL(new Blob([archive],{type:'application/x-tar'}));
   $('package-download').href=packageUrl;$('setup-host-name').textContent=name;
@@ -570,10 +570,10 @@ async function resumeSetup() {
   catch(error){if(setupCurrent(session))showError('setup-message',error);}
   finally{if(setupCurrent(session))$('prepare').disabled=false;}
 }
-async function copyCommands(commandId,buttonId,statusId,label,actionName) {
-  const session=setupSession,command=$(commandId).textContent,name=$('setup-host-name').textContent;
-  try{await navigator.clipboard.writeText(command);if(!setupCurrent(session))return;$(buttonId).textContent='Copied';if(statusId)$(statusId).textContent=actionName+' copied. Paste and run in Bash on '+name+'.';setTimeout(()=>{if(setupCurrent(session))$(buttonId).textContent=label;},2000);}
-  catch{if(!setupCurrent(session))return;if(statusId)$(statusId).textContent='Clipboard access was blocked. Select and copy the commands above.';else showError('setup-message',new Error('Clipboard access was blocked. Select and copy the commands above.'));}
+async function copyCommands(commandId,buttonId,label) {
+  const session=setupSession,command=$(commandId).textContent;
+  try{await navigator.clipboard.writeText(command);if(!setupCurrent(session))return;$(buttonId).textContent='Copied';setTimeout(()=>{if(setupCurrent(session))$(buttonId).textContent=label;},2000);}
+  catch{if(setupCurrent(session))showError('setup-message',new Error('Clipboard access was blocked. Select and copy the commands above.'));}
 }
 async function copySetup() {
   if(!setupCommand)return;
@@ -586,8 +586,8 @@ for(const id of ['cancel','cancel-bottom','finish-setup'])$(id).onclick=()=>{$('
 $('setup').addEventListener('close',()=>{if($('setup').open)return;setupSession++;enrollmentId=null;clearSetupPackage();});
 $('refresh').onclick=()=>refresh();$('fleet-view').onclick=()=>selectHost(null);
 $('search').oninput=render;$('sudo-docker').onchange=updateCommands;$('copy-setup').onclick=copySetup;
-$('copy-deploy').onclick=()=>copyCommands('deploy-commands','copy-deploy','deploy-copy-status','Copy start commands','Start commands');
-$('copy-transfer').onclick=()=>copyCommands('transfer-commands','copy-transfer','transfer-copy-status','Copy commands','Extract commands');
+$('copy-deploy').onclick=()=>copyCommands('deploy-commands','copy-deploy','Copy start commands');
+$('copy-transfer').onclick=()=>copyCommands('transfer-commands','copy-transfer','Copy commands');
 $('files-prepared').onclick=()=>{setupStage(2);$('copy-deploy').focus();};
 $('back-prepare').onclick=()=>{setupStage(1);$('copy-setup').focus();};
 $('wait-report').onclick=()=>{setupStage(3);updateEnrollment();refresh();$('finish-setup').focus();};

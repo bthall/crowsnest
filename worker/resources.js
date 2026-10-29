@@ -39,8 +39,16 @@ async function recordResources(bucket,id,report) {
     if(index>=0){if(Date.parse(samples[index].at)>now)return;samples[index]=entry;}else samples.push(entry);
     samples.sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
     let slice=samples.slice(-288), payload=JSON.stringify(slice);
-    let size=new TextEncoder().encode(payload).length;
-    while(size>RESOURCE_MAX_BYTES && slice.length>1){slice.shift();payload=JSON.stringify(slice);size=new TextEncoder().encode(payload).length;}
+    const byteLength=value=>typeof Buffer!=='undefined'?Buffer.byteLength(value):new TextEncoder().encode(value).length;
+    if(byteLength(payload)>RESOURCE_MAX_BYTES && slice.length>1) {
+      // Keep the usual single-pass path, but bound overflow work: repeatedly
+      // serializing the shrinking array is quadratic for dense histories.
+      const sizes=slice.map(sample=>byteLength(JSON.stringify(sample))+1);
+      let size=sizes.reduce((total,n)=>total+n,1), first=0;
+      while(size>RESOURCE_MAX_BYTES && first<slice.length-1)size-=sizes[first++];
+      slice=slice.slice(first);
+      payload=JSON.stringify(slice);
+    }
     const written=await bucket.put(key,payload,{onlyIf:object?{etagMatches:object.etag}:{etagDoesNotMatch:'*'}});
     if(written)return;
   }

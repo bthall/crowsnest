@@ -93,6 +93,26 @@ for(const signalEnabled of [false,true]) {
   assert.ok(peak>1 && peak<=10,`Polling must use bounded parallel reads with signals ${signalEnabled?'enabled':'disabled'} (peak ${peak})`);
   assert.ok(!JSON.stringify(hosts).includes('tokenHash'));
 }
+// The maintenance index must span every page and avoid reads for absent keys.
+const maintenanceIds=[...objects.keys()].filter(key=>key.startsWith('hosts/')).slice(0,5).map(key=>key.slice(6,-5));
+const maintenanceUntil=[new Date(Date.now()+3600000).toISOString(),new Date(Date.now()+7200000).toISOString(),'2000-01-01T00:00:00Z',null,null];
+for(let i=0;i<maintenanceIds.length;i++)objects.set('maintenance/hosts/'+maintenanceIds[i]+'.json',JSON.stringify({until:maintenanceUntil[i]}));
+const orphanKey='maintenance/hosts/ffffffff-ffff-ffff-ffff-ffffffffffff.json';
+objects.set(orphanKey,JSON.stringify({until:maintenanceUntil[0]}));
+const indexedStorage=testBucket(objects,2),maintenanceReads=[];
+let maintenancePages=0;
+env.BUCKET={...indexedStorage,
+  async get(key){if(key.startsWith('maintenance/hosts/'))maintenanceReads.push(key);return indexedStorage.get(key);},
+  async list(options){if(options.prefix==='maintenance/hosts/')maintenancePages++;return indexedStorage.list(options);}
+};
+const indexedHosts=(await (await call('/api/hosts')).json()).hosts;
+assert.equal(indexedHosts.length,17);
+assert.equal(maintenancePages,3,'All maintenance listing pages must be consumed');
+assert.deepEqual(maintenanceReads.sort(),maintenanceIds.map(id=>'maintenance/hosts/'+id+'.json').sort(),'Only registered hosts with listed maintenance records should be read');
+for(let i=0;i<maintenanceIds.length;i++)assert.equal(indexedHosts.find(host=>host.id===maintenanceIds[i]).maintenanceUntil,maintenanceUntil[i]);
+for(const host of indexedHosts.filter(host=>!maintenanceIds.includes(host.id)))assert.equal(host.maintenanceUntil,null);
+for(const id of maintenanceIds)objects.delete('maintenance/hosts/'+id+'.json');
+objects.delete(orphanKey);
 // A genuinely full fleet is rejected even when storage returns small pages.
 env.BUCKET=testBucket(objects,7);
 for(let n=14;n<97;n++){

@@ -227,15 +227,22 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
       // A host needs three reads, or four with signal alerts; keep at most nine in flight.
       const hostBatchSize=signalEnabled?2:3;
       const hosts=[]; let cursor;
+      const maintenanceKeys=new Set(); let maintCursor;
+      do {
+        const maintList=await env.BUCKET.list({prefix:'maintenance/hosts/',cursor:maintCursor});
+        for(const item of maintList.objects)maintenanceKeys.add(item.key);
+        maintCursor=maintList.truncated?maintList.cursor:undefined;
+      }while(maintCursor);
       do {const list=await env.BUCKET.list({prefix:'hosts/',cursor});
         for(let i=0;i<list.objects.length;i+=hostBatchSize) {
           const batch=await Promise.all(list.objects.slice(i,i+hostBatchSize).map(async item=>{
             const id=item.key.startsWith('hosts/') && item.key.endsWith('.json')?item.key.slice(6,-5):null;
             if(!id)return null;
+            const maintKey='maintenance/hosts/'+id+'.json';
             const [config,snapshot,maintenance,signals]=await Promise.all([
               env.BUCKET.get(item.key),
               env.BUCKET.get('snapshots/'+id+'.json'),
-              hostMaintenance(env.BUCKET,id),
+              maintenanceKeys.has(maintKey)?hostMaintenance(env.BUCKET,id):{},
               signalEnabled?env.BUCKET.get('signals/'+id+'.json'):null
             ]);
             if(!config)return null;
@@ -405,3 +412,4 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
     return json({error:'Not found'},404);
   }catch(error){console.error('Crowsnest request failed',error?.name);return json({error:'Unable to load or save status. Try again.'},503);}
 }};
+

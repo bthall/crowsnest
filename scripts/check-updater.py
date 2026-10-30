@@ -229,6 +229,32 @@ class Updates(unittest.TestCase):
         self.assertEqual(self.manager.status()['lastUpdate']['toVersion'], '0.11.1')
         self.assertEqual(u.read_json(self.manager.directory / 'previous.json')['state']['version'], '0.11.2')
 
+    def test_rollback_uses_saved_snapshot_when_current_containers_are_unavailable(self):
+        self.manager.update(release())
+        active = u.read_json(self.manager.source())
+        previous = u.read_json(self.manager.directory / 'previous.json')
+        self.engine.calls.clear()
+        self.engine.checks = [True]
+        with patch.object(self.engine, 'capture', side_effect=u.Error('current container is stopped or removed')):
+            self.manager.rollback()
+        self.assertEqual(self.engine.calls, [('deploy', previous['config']), 'verify'])
+        self.assertEqual(u.read_json(self.manager.source()), previous['config'])
+        self.assertEqual(u.read_json(self.manager.directory / 'previous.json')['config'], active)
+        self.assertFalse(self.manager.status()['pendingRecovery'])
+
+    def test_failed_rollback_from_stopped_deployment_retains_recovery_snapshot(self):
+        self.manager.update(release())
+        active = u.read_json(self.manager.source())
+        self.engine.checks = [False]
+        with patch.object(self.engine, 'capture', side_effect=u.Error('current container was removed')):
+            with self.assertRaisesRegex(u.Error, 'Rollback failed'):
+                self.manager.rollback()
+        self.assertEqual(u.read_json(self.manager.directory / 'pending.json')['previous']['config'], active)
+        self.engine.checks = [True]
+        self.manager.rollback()
+        self.assertEqual(u.read_json(self.manager.source()), active)
+        self.assertFalse(self.manager.status()['pendingRecovery'])
+
     def test_legacy_update_requires_explicit_migration(self):
         self.engine.data['services']['collector']['volumes'].append(
             {'type': 'bind', 'source': str(self.root / 'collector.py'), 'target': '/app/collector.py'})

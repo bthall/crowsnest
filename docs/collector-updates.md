@@ -155,7 +155,10 @@ mode; notification pauses remain a separate dashboard control.
 ./crowsnest status
 ```
 
-The manager preserves one prior effective deployment. A pending transaction from
+The manager preserves one prior effective deployment. Manual rollback also works
+when the current containers have stopped or been removed: it uses the saved,
+pinned active snapshot as the recovery checkpoint instead of requiring running
+containers. A pending transaction from
 an interrupted update is recovered before another deployment. If rollback fails,
 inspect host Docker availability, the retained images, mounts, and credentials;
 then retry `rollback`. A network or dashboard outage can prevent reporting

@@ -243,7 +243,17 @@ def main():
             assert 'PRESERVE_LITERAL=literal:${DO_NOT_EXPAND}:$:100%' in restored['Config']['Env']
             for name, body in original.items():
                 assert (root / name).read_bytes() == body, 'Migration/rollback changed user-owned file ' + name
-            print('Docker lifecycle passed: legacy report, packaged migration, credential rotation on the installed images, rejected candidate report, exact rollback, and fresh accepted reporting')
+            # A formerly healthy release can fail later; rollback must work
+            # without requiring the broken collector to be running first.
+            previous = manager_module.read_json(manager.directory / 'previous.json')
+            command(['docker', 'container', 'stop', '--time', '1', collector_name])
+            accepted_before_stopped_rollback = len(ingest.observed(True))
+            manager.timeout = 90
+            manager.rollback()
+            assert len(ingest.observed(True)) > accepted_before_stopped_rollback
+            assert manager_module.read_json(manager.source()) == previous['config']
+            assert not manager.status()['pendingRecovery']
+            print('Docker lifecycle passed: legacy report, packaged migration, credential rotation, rejected update recovery, stopped-container rollback, and fresh accepted reporting')
         finally:
             recovery_stop.set()
             ingest.allow_reports.set()

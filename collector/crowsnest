@@ -558,7 +558,14 @@ class Manager:
         current_config = read_json(self.source())
         if not current_config:
             raise Error('Current deployment snapshot is missing')
-        current_config, _ = self.engine.capture(current_config, self.source())
+        try:
+            current_config, _ = self.engine.capture(current_config, self.source())
+        except Error:
+            # The saved active snapshot already pins immutable image references.
+            # Stopped or removed containers must not block restoration of the
+            # known previous deployment. Retain this snapshot for recovery if
+            # that restoration itself fails.
+            pass
         current = {'config': current_config, 'state': state}
         atomic_json(self.directory / 'pending.json', {'previous': current,
                                                      'targetVersion': previous['state'].get('version')})

@@ -114,7 +114,7 @@ export async function createRuntime(config, {schedule = true, assets} = {}) {
       if (authenticated || publicAsset) requestHeaders.set('oai-authenticated-user-id', 'standalone-owner');
       const bytes = writes ? await body(incoming, 131072) : undefined;
       const request = new Request(url, {method, headers: requestHeaders, ...(bytes ? {body: bytes} : {})});
-      const response = writes ? await storage.run(() => app.fetch(request, environment), {atomic: true}) : await app.fetch(request, environment);
+      const response = writes ? await storage.run(() => app.fetch(request, environment), {atomic: true}) : await storage.run(() => app.fetch(request, environment));
       if (url.pathname === '/' && response.status === 200) {
         return new Response((await response.text()).replace('<body>', '<body data-auth-mode="standalone">'), {status: response.status, headers: {...Object.fromEntries(response.headers), ...securityHeaders}});
       }

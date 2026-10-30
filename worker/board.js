@@ -693,7 +693,7 @@ $('rotate-token').onclick=async()=>{
     const blob=await response.blob();if(!managementCurrent(session,id))return;
     if(configUrl)URL.revokeObjectURL(configUrl);configUrl=URL.createObjectURL(blob);
     $('config-download').href=configUrl;rotationRevision=revision;rotationExpiry=Date.now()+600000;
-    $('rotation-commands').textContent="bash <<'CROWSNEST_ROTATE'\nset -eu\n"+collectorDirectoryCommands().join('\n')+'\ntest -O .\ninstall -m 0600 ~/Downloads/collector.json ./collector.json\nsudo docker compose up -d --force-recreate collector\nCROWSNEST_ROTATE';
+    $('rotation-commands').textContent="bash <<'CROWSNEST_ROTATE'\nset -eu\n"+collectorDirectoryCommands().join('\n')+'\ntest -O .\ninstall -m 0600 ~/Downloads/collector.json ./collector.json\n'+collectorRestartCommands().join('\n')+'\nCROWSNEST_ROTATE';
     $('rotation-result').hidden=false;updateEnrollment();$('config-download').focus();
   }catch(error){if(managementCurrent(session,id))showError('management-message',error);}finally{if(managementCurrent(session,id))$('rotate-token').disabled=false;}
 };

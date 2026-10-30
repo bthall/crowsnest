@@ -56,7 +56,11 @@ To replace a reporting token, download the new `collector.json` and transfer it 
 
 ```bash
 install -m 0600 ~/Downloads/collector.json ./collector.json
-sudo docker compose up -d --force-recreate collector
+if [ -e .crowsnest/active.json ] || [ -e .crowsnest/state.json ] || [ -e .crowsnest/pending.json ]; then
+  ./crowsnest restart
+else
+  sudo docker compose up -d --force-recreate collector
+fi
 ```
 
 The existing token stays valid until a successful report using the replacement arrives. The replacement must first activate within ten minutes. An expired or lost replacement does not revoke the current token; prepare another configuration. Keep a private copy of the previous configuration until activation is confirmed so you can restore it after an expired attempt. Once activated, the previous host token is rejected. Only the latest prepared replacement can activate.

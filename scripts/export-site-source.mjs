@@ -19,6 +19,7 @@ const files = [
   'scripts/check-collector-changes.mjs', 'scripts/check-collector-change-guard.mjs',
   'scripts/collector-dependencies.mjs', 'scripts/check-collector-dependencies.mjs',
   'scripts/check-updater-manager.py',
+  'scripts/check-credential-restart.mjs',
   'scripts/check-update-status.mjs', 'scripts/check-updater.py',
   'scripts/check-updater-engine.py',
   'collector/version.json', 'collector/crowsnest', 'collector/compose.yaml',

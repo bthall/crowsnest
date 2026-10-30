@@ -70,6 +70,9 @@ class FakeEngine:
         self.calls.append('verify')
         return self.checks.pop(0)
 
+    def recreate_collector(self, path):
+        self.calls.append(('restart', u.read_json(path)))
+
 
 class Updates(unittest.TestCase):
     def setUp(self):
@@ -104,6 +107,52 @@ class Updates(unittest.TestCase):
         self.assertEqual(self.engine.calls, ['pull'])
         self.assertFalse(self.manager.status()['pendingRecovery'])
         self.assertEqual(self.manager.status()['lastUpdate']['rollback'], 'not_needed')
+
+    def test_credential_restart_preserves_active_images_overrides_and_release_state(self):
+        self.manager.update(release())
+        active = u.read_json(self.manager.source())
+        before = self.manager.status()
+        self.engine.calls.clear()
+        self.engine.checks = [True]
+        self.engine.data['services']['collector']['image'] = 'python:obsolete-template'
+        with patch.object(self.engine, 'resolve', side_effect=AssertionError('must not read legacy Compose')):
+            self.manager.restart()
+        self.assertEqual(self.engine.calls, [('restart', active), 'verify'])
+        self.assertEqual(self.manager.status(), before)
+        self.assertEqual(u.read_json(self.manager.source()), active)
+
+    def test_credential_restart_refuses_unmanaged_or_interrupted_deployments(self):
+        with self.assertRaisesRegex(u.Error, 'No managed deployment'):
+            self.manager.restart()
+        self.assertEqual(self.engine.calls, [])
+        u.atomic_json(self.manager.directory / 'pending.json', {'previous': {}})
+        with self.assertRaisesRegex(u.Error, 'pending rollback'):
+            self.manager.restart()
+        self.assertEqual(self.engine.calls, [])
+
+    def test_failed_credential_restart_never_reverts_to_legacy_configuration(self):
+        self.manager.update(release())
+        active = u.read_json(self.manager.source())
+        self.engine.calls.clear()
+        self.engine.checks = [False]
+        with self.assertRaisesRegex(u.Error, 'current credentials'):
+            self.manager.restart()
+        self.assertEqual(self.engine.calls, [('restart', active), 'verify'])
+        self.assertEqual(u.read_json(self.manager.source()), active)
+        self.assertEqual(self.manager.status()['installedVersion'], '0.11.2')
+
+    def test_credential_restart_works_after_first_migration_rolls_back(self):
+        self.engine.checks = [False, True]
+        with self.assertRaisesRegex(u.Error, 'previous deployment restored'):
+            self.manager.update(release(), migrate=True)
+        state = u.read_json(self.manager.directory / 'state.json')
+        self.assertNotIn('images', state)
+        recovered = u.read_json(self.manager.source())
+        self.engine.calls.clear()
+        self.engine.checks = [True]
+        self.manager.restart()
+        self.assertEqual(self.engine.calls, [('restart', recovered), 'verify'])
+        self.assertEqual(u.read_json(self.manager.directory / 'state.json'), state)
 
     def test_changed_docker_daemon_prevents_update_and_rollback(self):
         self.manager.update(release())

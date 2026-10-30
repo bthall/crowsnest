@@ -318,6 +318,10 @@ class Engine:
         run(self.compose(path) + ['up', '-d', '--no-build', '--pull', 'never', '--force-recreate',
                                  '--no-deps', *SERVICES], cwd=self.root, timeout=180)
 
+    def recreate_collector(self, path):
+        run(self.compose(path) + ['up', '-d', '--no-build', '--pull', 'never', '--force-recreate',
+                                 '--no-deps', 'collector'], cwd=self.root, timeout=180)
+
     def healthy(self, path, timeout):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -566,6 +570,20 @@ class Manager:
             # Preserve known-working current deployment as the recovery target.
             raise
 
+    def restart(self):
+        if (self.directory / 'pending.json').exists():
+            raise Error('Complete pending rollback before restarting with new credentials')
+        state = read_json(self.directory / 'state.json', {})
+        source = self.source()
+        if not source or not state.get('daemonId'):
+            raise Error('No managed deployment is available; do not fall back to legacy Compose after migration')
+        self.check_engine(state)
+        # Credentials are mounted from the existing host path. Recreating just
+        # this service picks up a replaced file without resolving legacy Compose.
+        self.engine.recreate_collector(source)
+        if not self.engine.healthy(source, self.timeout):
+            raise Error('Collector has not confirmed reporting with the current credentials; check the configuration and retry restart')
+
 
 def valid_window(value):
     if not isinstance(value, str) or not re.fullmatch(r'(?:[01][0-9]|2[0-3]):[0-5][0-9]-(?:[01][0-9]|2[0-3]):[0-5][0-9]', value):
@@ -681,6 +699,7 @@ def main():
         child = commands.add_parser(name)
         child.add_argument('--version', help='Published stable collector release (default newest; compatibility checked before deployment)')
     commands.add_parser('rollback')
+    commands.add_parser('restart', help='Recreate the installed collector to load replaced credentials')
     automatic = commands.add_parser('auto-update').add_subparsers(dest='action', required=True)
     enable = automatic.add_parser('enable')
     enable.add_argument('--window', default='02:00-04:00')
@@ -721,6 +740,9 @@ def main():
         elif args.command == 'rollback':
             manager.rollback()
             print('Previous collector deployment restored and reporting verified')
+        elif args.command == 'restart':
+            manager.restart()
+            print('Installed collector restarted and reporting verified')
         else:
             auto_update(manager, args)
         return 0

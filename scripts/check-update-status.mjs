@@ -24,6 +24,7 @@ assert.equal((await ingest(report)).status,200);
 const fleet=await (await call('/api/hosts')).json();
 assert.equal(fleet.availableCollectorVersion,release.version);
 assert.equal(fleet.collectorProtocol,release.protocol);
+assert.equal(fleet.minimumCollectorProtocol,release.minimumProtocol);
 assert.deepEqual(fleet.hosts[0].snapshot.updateStatus,status);
 assert.equal(fleet.hosts[0].snapshot.collectorProtocol,release.protocol);
 assert.ok(!JSON.stringify(fleet).includes('never-persist-this'));

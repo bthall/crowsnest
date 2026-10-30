@@ -115,6 +115,17 @@ class Adapter(unittest.TestCase):
             '-p', 'custom-collector', '-f', str(execution), 'up', '-d', '--no-build', '--pull', 'never',
             '--force-recreate', '--no-deps', 'socket-proxy', 'collector'], cwd=self.root, timeout=180)
 
+    def test_credential_restart_uses_saved_configuration_without_pulls_or_proxy_recreation(self):
+        original = self.snapshot.read_bytes()
+        with patch.object(u, 'run', return_value='') as command:
+            self.engine.recreate_collector(self.snapshot)
+        execution = self.snapshot.parent / 'execution-compose.json'
+        self.assertEqual(self.snapshot.read_bytes(), original)
+        self.assertEqual(u.read_json(execution), json.loads(json.dumps(self.config).replace('$', '$$')))
+        command.assert_called_once_with(['docker', 'compose', '--project-directory', str(self.root),
+            '-p', 'custom-collector', '-f', str(execution), 'up', '-d', '--no-build', '--pull', 'never',
+            '--force-recreate', '--no-deps', 'collector'], cwd=self.root, timeout=180)
+
     def test_pull_finishes_before_any_deployment_command_and_uses_digest_references(self):
         images = {'collector': u.IMAGES['collector'] + '@sha256:' + 'a' * 64,
                   'proxy': u.IMAGES['proxy'] + '@sha256:' + 'b' * 64}

@@ -79,6 +79,13 @@ would restore that template's old images and bind mounts. Editing original Compo
 settings takes effect on the next manual manager update. `status` reports saved
 management state and any pending recovery; the dashboard confirms report freshness.
 
+After replacing reporting credentials, use `./crowsnest restart`. It recreates
+only the installed collector from its saved deployment, preserves the pinned
+images and overrides, and verifies a fresh accepted report. The dashboard's
+token-replacement command selects this path automatically for managed hosts and
+uses the original Compose command only for unmigrated installations. A failed
+managed restart never falls back to the legacy template.
+
 For image-native installations from a collector release archive, create the private
 state directory as the installation owner before starting Compose:
 

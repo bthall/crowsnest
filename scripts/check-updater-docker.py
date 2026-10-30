@@ -190,6 +190,24 @@ def main():
             assert any(mount['Destination'] == '/run/crowsnest' and not mount['RW'] for mount in inspection['Mounts'])
             assert any(item['version'] == metadata['version'] and item['protocol'] == metadata['protocol']
                        for item in ingest.observed(True)), 'Packaged collector must report its independent version/protocol'
+            # Credential rotation must recreate the active image deployment,
+            # even though the original Compose file still specifies legacy mounts.
+            proxy_before = command(['docker', 'container', 'inspect', '--format', '{{.Id}}', proxy_name])
+            accepted_before_rotation = len(ingest.observed(True))
+            credentials = json.loads((root / 'collector.json').read_text())
+            ingest.host_token = 'synthetic-replacement-reporting-token'
+            credentials['hostToken'] = ingest.host_token
+            replacement = root / 'replacement.json'
+            replacement.write_text(json.dumps(credentials))
+            replacement.chmod(0o600)
+            replacement.replace(root / 'collector.json')
+            original['collector.json'] = (root / 'collector.json').read_bytes()
+            manager.restart()
+            assert len(ingest.observed(True)) > accepted_before_rotation, 'Replacement credentials must deliver a fresh accepted report'
+            assert command(['docker', 'container', 'inspect', '--format', '{{.Id}}', proxy_name]) == proxy_before
+            assert json.loads(command(['docker', 'container', 'inspect', collector_name]))[0]['Image'] == images['collector']
+            assert manager_module.read_json(manager.source()) == active, 'Token rotation must preserve the managed configuration'
+            assert not manager_module.legacy_mount(manager_module.read_json(manager.source()))
             expected, _installed = engine.capture(active, manager.source())
             accepted_before_failure = len(ingest.observed(True))
             ingest.allow_reports.clear()
@@ -225,7 +243,7 @@ def main():
             assert 'PRESERVE_LITERAL=literal:${DO_NOT_EXPAND}:$:100%' in restored['Config']['Env']
             for name, body in original.items():
                 assert (root / name).read_bytes() == body, 'Migration/rollback changed user-owned file ' + name
-            print('Docker lifecycle passed: legacy report, packaged migration, literal-dollar Compose snapshot, rejected candidate report, exact rollback, and fresh accepted reporting')
+            print('Docker lifecycle passed: legacy report, packaged migration, credential rotation on the installed images, rejected candidate report, exact rollback, and fresh accepted reporting')
         finally:
             recovery_stop.set()
             ingest.allow_reports.set()

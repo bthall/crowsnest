@@ -95,6 +95,8 @@ jobs:
       - name: Smoke test and scan both images on both platforms
         if: steps.prepare.outputs.skip != 'true'
         env:
+          EXPECTED_COLLECTOR_VERSION: ${{ steps.prepare.outputs.version }}
+          EXPECTED_COLLECTOR_PROTOCOL: ${{ steps.prepare.outputs.protocol }}
           COLLECTOR_IMAGE: ${{ steps.prepare.outputs.collector_image }}
           PROXY_IMAGE: ${{ steps.prepare.outputs.proxy_image }}
           COLLECTOR_AMD64_DIGEST: ${{ steps.platforms.outputs.collector_amd64_digest }}
@@ -110,8 +112,9 @@ jobs:
               linux/arm64) collector_digest="$COLLECTOR_ARM64_DIGEST"; proxy_digest="$PROXY_ARM64_DIGEST" ;;
             esac
             docker run --rm --platform "$platform" --network none --read-only \
+              --env EXPECTED_COLLECTOR_VERSION --env EXPECTED_COLLECTOR_PROTOCOL \
               --entrypoint python "$COLLECTOR_IMAGE@$collector_digest" \
-              -c 'import runpy; c=runpy.run_path("/app/collector.py"); assert "__" not in c["COLLECTOR_VERSION"]; assert int(c["COLLECTOR_PROTOCOL"]) > 0'
+              -c 'import os,runpy; c=runpy.run_path("/app/collector.py"); assert c["COLLECTOR_VERSION"] == os.environ["EXPECTED_COLLECTOR_VERSION"]; assert int(c["COLLECTOR_PROTOCOL"]) == int(os.environ["EXPECTED_COLLECTOR_PROTOCOL"])'
             docker run --rm --platform "$platform" --network none --read-only \
               --entrypoint haproxy "$PROXY_IMAGE@$proxy_digest" \
               -c -f /usr/local/etc/haproxy/haproxy.cfg

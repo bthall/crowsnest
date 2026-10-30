@@ -4,20 +4,22 @@ import {execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 import {releaseContext, prepareRelease, releasePlatforms} from './release.mjs';
+import {compareVersions, readCollectorMetadata, renderManager, validateCollectorMetadata} from './collector-metadata.mjs';
+import {checkCollectorChanges, collectorRecipes} from './check-collector-changes.mjs';
 
 const digestPattern = /^sha256:[a-f0-9]{64}$/;
-const stableVersion = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
 export function collectorContext(event, repository, metadata) {
-  if (!metadata || !stableVersion.test(metadata.version) || !Number.isSafeInteger(metadata.protocol) || metadata.protocol < 1 || metadata.protocol > 65535) throw new Error('Invalid collector release metadata');
+  metadata = validateCollectorMetadata(metadata);
   const context = releaseContext(event, repository, metadata.version);
-  return {...context, protocol: metadata.protocol, tag: 'collector-v' + metadata.version,
+  return {...context, protocol: metadata.protocol, manager_version: metadata.managerVersion, minimum_manager_version: metadata.minimumManagerVersion, tag: 'collector-v' + metadata.version,
     collector_image: context.image + '-collector', proxy_image: context.image + '-socket-proxy'};
 }
 
-export function collectorManifest(context, collectorDigest, proxyDigest) {
+export function collectorManifest(context, collectorDigest, proxyDigest, managerSource) {
   if (!digestPattern.test(collectorDigest) || !digestPattern.test(proxyDigest)) throw new Error('Collector releases require immutable image digests');
-  return {schema: 1, version: context.version, protocol: context.protocol,
+  if (typeof managerSource !== 'string' || !managerSource || managerSource.includes('__MANAGER_METADATA__')) throw new Error('Collector release requires a stamped manager');
+  return {schema: 1, manager: {version: context.manager_version, minimumVersion: context.minimum_manager_version, sha256: createHash('sha256').update(managerSource).digest('hex')}, version: context.version, protocol: context.protocol,
     images: {collector: context.collector_image + '@' + collectorDigest, proxy: context.proxy_image + '@' + proxyDigest}};
 }
 
@@ -31,6 +33,56 @@ export function collectorCompose(template, manifest) {
     result = result.replace(expression, reference);
   }
   return result;
+}
+
+
+// A version that was already published may only be skipped when its release
+// inputs are unchanged. Compare immutable Git blobs, never a mutable branch URL.
+export async function verifyPublishedCollectorInputs(context, api) {
+  const base = '/repos/' + context.repository;
+  const releases = [];
+  let complete = false;
+  for (let page = 1; page <= 10; page++) {
+    const batch = await api(base + '/releases?per_page=100&page=' + page);
+    if (!Array.isArray(batch)) throw new Error('Invalid collector release listing');
+    releases.push(...batch.filter(release => !release.draft && !release.prerelease
+      && /^collector-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(release.tag_name)));
+    if (batch.length < 100) {complete = true; break;}
+  }
+  if (!complete) throw new Error('Collector release history exceeds the verification bound');
+  if (!releases.length) return {firstRelease: true, changed: []};
+  releases.sort((a, b) => compareVersions(a.tag_name.slice(11), b.tag_name.slice(11)));
+  const tag = releases.at(-1).tag_name;
+  const reference = await api(base + '/git/ref/tags/' + tag);
+  let target = reference.object;
+  if (target?.type === 'tag') target = (await api(base + '/git/tags/' + target.sha)).object;
+  if (target?.type !== 'commit' || !/^[a-f0-9]{40}$/.test(target.sha)) throw new Error('Invalid published collector tag target');
+  const snapshot = async (sha, includeRecipes = true) => {
+    const tree = await api(base + '/git/trees/' + sha + '?recursive=1');
+    if (tree.truncated || !Array.isArray(tree.tree)) throw new Error('Incomplete collector release tree');
+    const files = {};
+    for (const item of tree.tree) if (item.type !== 'tree') files[item.path] = [item.mode, item.type, item.sha].join(' ');
+    const metadata = tree.tree.find(item => item.path === 'collector/version.json' && item.type === 'blob');
+    if (!metadata || !/^[a-f0-9]{40}$/.test(metadata.sha)) throw new Error('Published collector metadata is missing');
+    const blob = await api(base + '/git/blobs/' + metadata.sha);
+    if (blob.encoding !== 'base64' || typeof blob.content !== 'string' || blob.size > 65536) throw new Error('Invalid collector metadata blob');
+    const recipes = includeRecipes ? Object.fromEntries(await Promise.all(collectorRecipes.map(async path => {
+      const item = tree.tree.find(entry => entry.path === path && entry.type === 'blob' && /^100(?:644|755)$/.test(entry.mode));
+      if (!item || !/^[a-f0-9]{40}$/.test(item.sha)) throw new Error('Collector image recipe is missing: ' + path);
+      const source = await api(base + '/git/blobs/' + item.sha);
+      if (source.encoding !== 'base64' || typeof source.content !== 'string' || source.size > 1048576) throw new Error('Invalid collector recipe blob');
+      return [path, Buffer.from(source.content, 'base64').toString('utf8')];
+    }))) : undefined;
+    return {files, recipes, metadata: JSON.parse(Buffer.from(blob.content, 'base64').toString('utf8'))};
+  };
+  const [previous, current] = await Promise.all([snapshot(target.sha, false), snapshot(context.sha)]);
+  if (previous.metadata.version !== tag.slice(11) || current.metadata.version !== context.version) throw new Error('Collector tag or checkout disagrees with version metadata');
+  return checkCollectorChanges(previous, current);
+}
+
+export async function prepareCollectorRelease(context, api) {
+  await verifyPublishedCollectorInputs(context, api);
+  return prepareRelease(context, api);
 }
 
 function output(values) {
@@ -74,9 +126,10 @@ function sbom(reference) {
 
 async function run() {
   const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
-  const context = collectorContext(event, process.env.GITHUB_REPOSITORY, JSON.parse(readFileSync('collector/version.json', 'utf8')));
+  const metadata = readCollectorMetadata();
+  const context = collectorContext(event, process.env.GITHUB_REPOSITORY, metadata);
   const api = githubApi(process.env.GH_TOKEN), mode = process.argv[2];
-  if (mode === 'prepare') { output(await prepareRelease(context, api)); return; }
+  if (mode === 'prepare') { output(await prepareCollectorRelease(context, api)); return; }
   if (mode === 'inspect') {
     const values = {};
     for (const kind of ['collector', 'proxy']) {
@@ -88,7 +141,8 @@ async function run() {
     output(values); return;
   }
   const digests = {collector: process.env.COLLECTOR_DIGEST, proxy: process.env.PROXY_DIGEST};
-  const manifest = collectorManifest(context, digests.collector, digests.proxy);
+  const managerSource = renderManager(readFileSync('collector/crowsnest', 'utf8'), metadata);
+  const manifest = collectorManifest(context, digests.collector, digests.proxy, managerSource);
   if (mode === 'platforms') {
     const values = {};
     for (const kind of ['collector', 'proxy']) for (const [key, value] of Object.entries(releasePlatforms(inspect(manifest.images[kind]), context.sha))) values[kind + '_' + key] = value;
@@ -96,6 +150,7 @@ async function run() {
   }
   if (mode !== 'publish') throw new Error('Unknown collector release operation');
   const base = '/repos/' + context.repository;
+  await verifyPublishedCollectorInputs(context, api);
   if ((await api(base + '/git/ref/heads/main')).object.sha !== context.sha) throw new Error('Main advanced before collector publication');
   if (await api(base + '/releases/tags/' + context.tag, {allow404: true})) throw new Error('Collector release already exists; refusing to replace it');
   const sboms = {};
@@ -109,17 +164,18 @@ async function run() {
   const directory = 'output/collector-release/';
   writeFileSync(directory + 'compose.yaml', collectorCompose(readFileSync('collector/compose.yaml', 'utf8'), manifest));
   writeFileSync(directory + 'collector-release.json', JSON.stringify(manifest, null, 2) + '\n');
-  writeFileSync(directory + 'crowsnest', readFileSync('collector/crowsnest')); chmodSync(directory + 'crowsnest', 0o755);
+  writeFileSync(directory + 'crowsnest', managerSource); chmodSync(directory + 'crowsnest', 0o755);
   writeFileSync(directory + 'LICENSE', readFileSync('LICENSE'));
   writeFileSync(directory + 'README.md', '# Crowsnest collector ' + context.version + '\n\nThis archive contains no reporting credentials. For an existing deployment, copy only\n`crowsnest` to the installation directory, then run `./crowsnest migrate --version ' + context.version + '`.\nMigration preserves the private credentials and checks accepted reporting before committing.\nFor a new installation, obtain collector.json from your private dashboard, create .env\nwith COLLECTOR_UID and COLLECTOR_GID, and keep both files private.\nCreate the host-owned state directory with `install -d -m 0700 .crowsnest; install -d -m 0755 .crowsnest/status` before\nstarting containers. Run `docker compose up -d`, then `./crowsnest migrate --version ' + context.version + '` to adopt and verify reporting.\nUse `./crowsnest status` for saved management state; confirm fresh reports in the dashboard.\nAutomatic updates remain disabled until explicitly enabled per host.\n\nFull guide: https://github.com/' + context.repository + '/blob/' + context.tag + '/docs/deployment.md\n');
   execFileSync('docker', ['compose', '--file', directory + 'compose.yaml', 'config', '--quiet'], {env: {...process.env, COLLECTOR_UID: '1000', COLLECTOR_GID: '1000'}, stdio: 'inherit'});
   const archive = 'output/crowsnest-collector-' + context.version + '.tar.gz';
   execFileSync('tar', ['-czf', archive, '-C', directory, 'compose.yaml', 'collector-release.json', 'crowsnest', 'LICENSE', 'README.md']);
-  const manifestPath = 'output/collector-release.json', sbomPath = 'output/collector-sbom.json';
+  const manifestPath = 'output/collector-release.json', sbomPath = 'output/collector-sbom.json', managerPath = 'output/crowsnest';
+  writeFileSync(managerPath, managerSource); chmodSync(managerPath, 0o755);
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
   writeFileSync(sbomPath, JSON.stringify(sboms) + '\n');
   const sums = 'output/collector-SHA256SUMS';
-  writeFileSync(sums, [archive, manifestPath, sbomPath].map(path => createHash('sha256').update(readFileSync(path)).digest('hex') + '  ' + path.split('/').pop()).join('\n') + '\n');
+  writeFileSync(sums, [archive, manifestPath, sbomPath, managerPath].map(path => createHash('sha256').update(readFileSync(path)).digest('hex') + '  ' + path.split('/').pop()).join('\n') + '\n');
   // All source, platform, SBOM, and packaging checks precede version/tag mutation.
   for (const kind of ['collector', 'proxy']) {
     const image = context[kind + '_image'], reference = image + ':' + context.version;
@@ -138,7 +194,7 @@ async function run() {
   }
   const notes = 'Collector ' + context.version + ', reporting protocol ' + context.protocol + '.\n\nImages contain the collector code and restricted proxy configuration.\nLinux amd64 and arm64 images passed smoke tests and vulnerability checks.\nThe manifest and archive pin both images by digest; SBOMs and checksums are attached.\nUpdates remain manual unless explicitly enabled on a host. Publishing does not restart collectors.\n';
   writeFileSync('output/collector-release-notes.md', notes);
-  execFileSync('gh', ['release', 'create', context.tag, '--repo', context.repository, '--verify-tag', '--latest=false', '--title', 'Crowsnest collector ' + context.version, '--notes-file', 'output/collector-release-notes.md', archive, manifestPath, sbomPath, sums], {stdio: 'inherit', timeout: 120000});
+  execFileSync('gh', ['release', 'create', context.tag, '--repo', context.repository, '--verify-tag', '--latest=false', '--title', 'Crowsnest collector ' + context.version, '--notes-file', 'output/collector-release-notes.md', archive, manifestPath, sbomPath, managerPath, sums], {stdio: 'inherit', timeout: 120000});
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) run().catch(error => {console.error(error.message); process.exitCode = 1;});

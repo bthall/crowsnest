@@ -4,8 +4,8 @@ import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {collectorContext, collectorManifest, collectorCompose} from './collector-release.mjs';
-import {prepareRelease} from './release.mjs';
+import {collectorContext, collectorManifest, collectorCompose, prepareCollectorRelease, verifyPublishedCollectorInputs} from './collector-release.mjs';
+import {renderManager, validateCollectorMetadata} from './collector-metadata.mjs';
 
 const sha = 'a'.repeat(40), digest = 'sha256:' + 'c'.repeat(64), proxyDigest = 'sha256:' + 'd'.repeat(64);
 const event = {repository: {id: 1, full_name: 'fixture/crowsnest'}, workflow_run: {name: 'Security', event: 'push', head_branch: 'main', conclusion: 'success', head_sha: sha, head_repository: {id: 1}}};
@@ -17,10 +17,12 @@ assert.equal(context.proxy_image, 'ghcr.io/fixture/crowsnest-socket-proxy');
 for (const protocol of [0, -1, 1.5, '1', 65536, null]) assert.throws(() => collectorContext(event, 'fixture/crowsnest', {...metadata, protocol}));
 for (const version of ['0.1.0-rc.1', '1.0', '01.0.0', '1.0.0\nskip=true']) assert.throws(() => collectorContext(event, 'fixture/crowsnest', {...metadata, version}));
 for (const changes of [{event: 'pull_request'}, {head_branch: 'topic'}, {head_repository: {id: 2}}, {conclusion: 'failure'}]) assert.throws(() => collectorContext({...event, workflow_run: {...event.workflow_run, ...changes}}, 'fixture/crowsnest', metadata));
-const manifest = collectorManifest(context, digest, proxyDigest);
-assert.deepEqual(Object.keys(manifest).sort(), ['images', 'protocol', 'schema', 'version']);
+const managerTemplate = "#!/usr/bin/env python3\nimport json\nmetadata = json.loads('__MANAGER_METADATA__')\nprint(json.dumps(metadata))\n";
+const managerSource = renderManager(managerTemplate, metadata);
+const manifest = collectorManifest(context, digest, proxyDigest, managerSource);
+assert.deepEqual(Object.keys(manifest).sort(), ['images', 'manager', 'protocol', 'schema', 'version']);
 assert.equal(manifest.images.proxy, context.proxy_image + '@' + proxyDigest);
-assert.throws(() => collectorManifest(context, 'latest', proxyDigest));
+assert.throws(() => collectorManifest(context, 'latest', proxyDigest, managerSource));
 const template = readFileSync('collector/compose.yaml', 'utf8');
 const rendered = collectorCompose(template, manifest);
 assert.ok(rendered.includes(manifest.images.collector) && rendered.includes(manifest.images.proxy));
@@ -33,7 +35,8 @@ assert.throws(() => collectorCompose(template.replaceAll('COLLECTOR_IMAGE', 'UNK
 assert.throws(() => collectorCompose(template, {...manifest, images: {...manifest.images, proxy: 'https://untrusted.example/image'}}));
 const ci = {id: 2, path: '.github/workflows/check.yml', event: 'push', head_branch: 'main', head_sha: sha, status: 'completed', conclusion: 'success'};
 const paths = [];
-await prepareRelease(context, async path => {
+await prepareCollectorRelease(context, async path => {
+  if (path.includes('/releases?')) return [];
   paths.push(path);
   if (path.includes('/releases/')) return null;
   if (path.includes('/actions/runs')) return {workflow_runs: [ci]};
@@ -43,6 +46,48 @@ await prepareRelease(context, async path => {
 });
 assert.ok(paths.some(path => path.endsWith('/tags/collector-v' + metadata.version)));
 assert.ok(!paths.some(path => path.endsWith('/tags/v' + metadata.version)));
+
+// An existing release must not silently swallow changed collector inputs.
+for (const scenario of ['unchanged', 'source-unbumped', 'source-bumped', 'manager-unbumped', 'manager-bumped', 'truncated-tree']) {
+  const oldSha = 'b'.repeat(40), oldBlob = '1'.repeat(40), newBlob = '2'.repeat(40);
+  const next = {...metadata};
+  if (scenario.endsWith('-bumped') || scenario === 'manager-unbumped') next.version = '0.11.2';
+  if (scenario === 'manager-bumped') next.managerVersion = '1.0.1';
+  const candidate = collectorContext(event, 'fixture/crowsnest', next);
+  const base = '/repos/' + candidate.repository;
+  const oldTree = [
+    {path: 'collector/version.json', mode: '100644', type: 'blob', sha: oldBlob},
+    {path: 'worker/collector.py', mode: '100644', type: 'blob', sha: '3'.repeat(40)},
+    {path: 'collector/crowsnest', mode: '100755', type: 'blob', sha: '4'.repeat(40)},
+    {path: 'collector/Dockerfile', mode: '100644', type: 'blob', sha: '7'.repeat(40)},
+    {path: 'collector/Dockerfile.proxy', mode: '100644', type: 'blob', sha: '8'.repeat(40)},
+  ];
+  const newTree = oldTree.map(item => ({...item}));
+  newTree[0].sha = newBlob;
+  if (scenario === 'unchanged') newTree[0].sha = oldBlob;
+  if (scenario.startsWith('source-')) newTree[1].sha = '5'.repeat(40);
+  if (scenario.startsWith('manager-')) newTree[2].sha = '6'.repeat(40);
+  let skipped = false;
+  const api = async path => {
+    if (path === base + '/releases?per_page=100&page=1') return [{tag_name: context.tag, draft: false, prerelease: false}];
+    if (path === base + '/git/ref/tags/' + context.tag) return {object: {type: 'commit', sha: oldSha}};
+    if (path === base + '/git/trees/' + oldSha + '?recursive=1') return {tree: oldTree};
+    if (path === base + '/git/trees/' + sha + '?recursive=1') return {tree: newTree, truncated: scenario === 'truncated-tree'};
+    if (path === base + '/git/blobs/' + '7'.repeat(40)) return {encoding: 'base64', content: Buffer.from('FROM python:fixture\nCOPY worker/collector.py /app/collector.py\n').toString('base64')};
+    if (path === base + '/git/blobs/' + '8'.repeat(40)) return {encoding: 'base64', content: Buffer.from('FROM haproxy:fixture\n').toString('base64')};
+    if (path === base + '/git/blobs/' + oldBlob) return {encoding: 'base64', content: Buffer.from(JSON.stringify(metadata)).toString('base64')};
+    if (path === base + '/git/blobs/' + newBlob) return {encoding: 'base64', content: Buffer.from(JSON.stringify(next)).toString('base64')};
+    if (path === base + '/releases/tags/' + context.tag) {skipped = true; return {draft: false};}
+    throw new Error('Unexpected input verification request: ' + path);
+  };
+  if (scenario === 'unchanged') {
+    assert.equal((await prepareCollectorRelease(candidate, api)).skip, true);
+    assert.equal(skipped, true);
+  } else if (scenario.endsWith('-unbumped') || scenario === 'truncated-tree') {
+    await assert.rejects(() => prepareCollectorRelease(candidate, api), /without a newer|Incomplete/);
+    assert.equal(skipped, false, 'Invalid input versions must fail before the existing-release skip');
+  } else assert.ok((await verifyPublishedCollectorInputs(candidate, api)).changed.length > 0);
+}
 
 // Execute real packaging with fake registry and GitHub transports. No network or Docker.
 const script = resolve('scripts/collector-release.mjs');
@@ -56,7 +101,7 @@ for (const scenario of ['valid', 'proxy-conflict', 'source-mismatch', 'incomplet
     mkdirSync(join(directory, 'collector'));
     writeFileSync(join(directory, 'collector/version.json'), JSON.stringify(metadata));
     writeFileSync(join(directory, 'collector/compose.yaml'), template);
-    writeFileSync(join(directory, 'collector/crowsnest'), '#!/usr/bin/env python3\nprint("synthetic manager")\n');
+    writeFileSync(join(directory, 'collector/crowsnest'), managerTemplate);
     writeFileSync(join(directory, 'LICENSE'), readFileSync('LICENSE'));
     writeFileSync(join(directory, 'event.json'), JSON.stringify(event));
     writeFileSync(join(directory, 'transport.mjs'), `
@@ -101,6 +146,7 @@ for (const scenario of ['valid', 'proxy-conflict', 'source-mismatch', 'incomplet
         const path=new URL(url).pathname,method=options.method;
         calls.push({path,method,body:options.body?JSON.parse(options.body):null});
         const base='/repos/'+context.repository;
+        if(path===base+'/releases')return Response.json([]);
         if(path===base+'/git/ref/heads/main')return Response.json({object:{sha:scenario==='main-advanced'?'b'.repeat(40):context.sha}});
         if(path===base+'/releases/tags/'+context.tag || path===base+'/git/ref/tags/'+context.tag)return Response.json({}, {status:404});
         if(path===base+'/git/tags' && method==='POST')return Response.json({sha:'e'.repeat(40)});
@@ -130,7 +176,11 @@ for (const scenario of ['valid', 'proxy-conflict', 'source-mismatch', 'incomplet
     assert.equal(members['compose.yaml'].content, rendered);
     assert.deepEqual(JSON.parse(members['collector-release.json'].content), manifest);
     assert.ok(members['README.md'].content.includes('collector-v' + context.version));
-    const names = [archiveName, 'collector-release.json', 'collector-sbom.json'];
+    assert.equal(members.crowsnest.content, managerSource);
+    assert.equal(readFileSync(join(directory, 'output/crowsnest'), 'utf8'), managerSource);
+    assert.equal(manifest.manager.sha256, createHash('sha256').update(managerSource).digest('hex'));
+    assert.deepEqual(JSON.parse(execFileSync('python3', [join(directory, 'output/crowsnest')], {encoding: 'utf8'})), metadata);
+    const names = [archiveName, 'collector-release.json', 'collector-sbom.json', 'crowsnest'];
     const sums = names.map(name => createHash('sha256').update(readFileSync(join(directory, 'output', name))).digest('hex') + '  ' + name).join('\n') + '\n';
     assert.equal(readFileSync(join(directory, 'output/collector-SHA256SUMS'), 'utf8'), sums);
     const publication = calls.find(call => call.command === 'gh');

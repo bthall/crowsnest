@@ -3,9 +3,10 @@ import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
+import {readCollectorMetadata} from './collector-metadata.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const {version}=JSON.parse(await readFile(root+'package.json','utf8'));
-const collectorRelease=JSON.parse(await readFile(root+'collector/version.json','utf8'));
+const collectorRelease=readCollectorMetadata(root+'collector/version.json');
 const containerId=name=>createHash('sha256').update(name).digest('hex');
 const ago = seconds => new Date(Date.now() - seconds * 1000).toISOString();
 const container = (name, image, state, health, restarts = 0, uptime = 86400) => ({
@@ -37,7 +38,7 @@ function fixtures() {
   }
   data.hosts[1].maintenanceUntil=new Date(Date.now()+3600000).toISOString();
   data.availableCollectorVersion=collectorRelease.version;
-  data.collectorProtocol=collectorRelease.protocol;data.minimumCollectorProtocol=1;
+  data.collectorProtocol=collectorRelease.protocol;data.minimumCollectorProtocol=collectorRelease.minimumProtocol;
   data.hosts[0].snapshot.collectorVersion=collectorRelease.version;data.hosts[1].snapshot.collectorVersion='0.8.0';data.hosts[2].snapshot.collectorVersion=collectorRelease.version;
   for(const host of [data.hosts[0],data.hosts[2]])host.snapshot.collectorProtocol=collectorRelease.protocol;
   data.hosts[0].snapshot.updateStatus={autoUpdates:true,lastAttempt:ago(7200),lastResult:'updated',fromVersion:'0.11.0',toVersion:collectorRelease.version,rollback:'not_needed'};

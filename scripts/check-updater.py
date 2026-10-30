@@ -19,6 +19,7 @@ loader.exec_module(u)
 
 def release(number='0.11.2'):
     return {'schema': 1, 'version': number, 'protocol': 1,
+            'manager': {'version': u.MANAGER_VERSION, 'minimumVersion': u.MANAGER_VERSION, 'sha256': 'a' * 64},
             'images': {role: repo + '@sha256:' + ('b' if role == 'collector' else 'c') * 64
                        for role, repo in u.IMAGES.items()}}
 

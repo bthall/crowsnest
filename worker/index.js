@@ -10,7 +10,7 @@ const LOGO = '__LOGO_BASE64__';
 const VERSION = '__APP_VERSION__';
 const COLLECTOR_VERSION = '__COLLECTOR_VERSION__';
 const COLLECTOR_PROTOCOL = Number('__COLLECTOR_PROTOCOL__');
-const MIN_COLLECTOR_PROTOCOL = 1;
+const MIN_COLLECTOR_PROTOCOL = Number('__MIN_COLLECTOR_PROTOCOL__');
 // __VERSIONS_SOURCE__
 const STATES = new Set(['running','exited','created','restarting','paused','dead','removing','unknown']);
 const HEALTH = new Set(['healthy','unhealthy','starting','none']);

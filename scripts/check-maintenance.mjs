@@ -3,6 +3,7 @@ import {readFile,writeFile,mkdir,stat,symlink} from 'node:fs/promises';
 import {spawnSync} from 'node:child_process';
 import {join} from 'node:path';
 import {testBucket} from './test-storage.mjs';
+import {readCollectorMetadata,renderManager} from './collector-metadata.mjs';
 const source=await readFile('dist/server/index.js','utf8');
 const worker=(await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'))).default;
 const objects=new Map(), requests=[];
@@ -66,7 +67,7 @@ try {
   const {version}=JSON.parse(await readFile('collector/version.json','utf8'));
   assert.equal(update.collectorVersion,version);
   const prepared=execute();assert.equal(prepared.status,0,prepared.stderr);
-  assert.equal(await readFile(join(dir,'crowsnest'),'utf8'),(await readFile('collector/crowsnest','utf8'))+'\n');
+  assert.equal(await readFile(join(dir,'crowsnest'),'utf8'),renderManager(await readFile('collector/crowsnest','utf8'),readCollectorMetadata())+'\n');
   assert.equal((await stat(join(dir,'crowsnest'))).mode&0o777,0o700);
   assert.equal(await readFile(join(dir,'collector.py'),'utf8'),'old code');
   assert.equal(await readFile(join(dir,'collector.json'),'utf8'),'private fixture');assert.equal((await stat(join(dir,'collector.json'))).mode&0o777,0o600);assert.equal(await readFile(join(dir,'.env'),'utf8'),'existing user');assert.equal(await readFile(join(dir,'compose.yaml'),'utf8'),'existing compose');

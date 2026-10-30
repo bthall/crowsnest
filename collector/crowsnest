@@ -12,6 +12,7 @@ import re
 import shlex
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -19,7 +20,14 @@ import urllib.request
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 REPOSITORY = 'bthall/crowsnest'
-PROTOCOL = 1
+# Release packaging embeds the same metadata used by the images and dashboard.
+# The source checkout can read it directly for development and regression tests.
+BUILD_METADATA = '__MANAGER_METADATA__'
+METADATA = (json.loads((Path(__file__).parent / 'version.json').read_text())
+            if BUILD_METADATA.startswith('__') else json.loads(BUILD_METADATA))
+PROTOCOL = METADATA['protocol']
+MIN_PROTOCOL = METADATA['minimumProtocol']
+MANAGER_VERSION = METADATA['managerVersion']
 IMAGES = {'collector': 'ghcr.io/bthall/crowsnest-collector',
           'proxy': 'ghcr.io/bthall/crowsnest-socket-proxy'}
 SERVICES = ('socket-proxy', 'collector')
@@ -92,20 +100,27 @@ class HTTPSOnly(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(request, fp, code, msg, headers, newurl)
 
 
-def download_json(url):
+def download_bytes(url, limit=1048576):
     request = urllib.request.Request(url, headers={'Accept': 'application/vnd.github+json',
                                                   'User-Agent': 'crowsnest-collector-manager/1'})
     try:
         with urllib.request.build_opener(HTTPSOnly()).open(request, timeout=30) as response:
-            body = response.read(1048577)
-            if len(body) > 1048576:
-                raise Error('Release metadata exceeds the size limit')
-            return json.loads(body)
-    except (urllib.error.URLError, ValueError) as exc:
+            body = response.read(limit + 1)
+            if len(body) > limit:
+                raise Error('Release download exceeds the size limit')
+            return body
+    except urllib.error.URLError as exc:
         raise Error('Unable to read collector release metadata') from exc
 
 
-def manifest_for(selected):
+def download_json(url):
+    try:
+        return json.loads(download_bytes(url))
+    except ValueError as exc:
+        raise Error('Invalid collector release metadata') from exc
+
+
+def manifest_for(selected, for_manager=False):
     version(selected)
     release = download_json('https://api.github.com/repos/' + REPOSITORY + '/releases/tags/collector-v' + selected)
     if (not isinstance(release, dict) or release.get('draft') or release.get('prerelease')
@@ -117,14 +132,99 @@ def manifest_for(selected):
         raise Error('Collector release has no immutable image manifest')
     data = download_json(expected)
     if (not isinstance(data, dict) or type(data.get('schema')) is not int or data.get('schema') != 1
-            or type(data.get('protocol')) is not int or data.get('protocol') != PROTOCOL
+            or type(data.get('protocol')) is not int or not 1 <= data['protocol'] <= 65535
             or data.get('version') != selected or not isinstance(data.get('images'), dict)):
         raise Error('Collector release is incompatible with this manager')
     for role, repository in IMAGES.items():
         value = data['images'].get(role)
         if not isinstance(value, str) or not re.fullmatch(re.escape(repository) + r'@sha256:[0-9a-f]{64}', value):
             raise Error('Collector manifest must pin both trusted images by digest')
+    manager = data.get('manager')
+    if (not isinstance(manager, dict) or not isinstance(manager.get('sha256'), str)
+            or not re.fullmatch('[a-f0-9]{64}', manager['sha256'])):
+        raise Error('Release is missing verified manager metadata')
+    if version(manager.get('minimumVersion')) > version(manager.get('version')):
+        raise Error('Release requires a newer manager than it provides')
+    if not for_manager:
+        if version(MANAGER_VERSION) < version(manager['minimumVersion']):
+            raise Error('Collector ' + selected + ' requires manager ' + manager['minimumVersion']
+                        + '; run ./crowsnest self-update --version ' + selected + ' first')
+        if not MIN_PROTOCOL <= data['protocol'] <= PROTOCOL:
+            raise Error('Collector protocol is unsupported; run ./crowsnest self-update --version '
+                        + selected + ' before this upgrade')
+    elif not any(asset.get('name') == 'crowsnest' and asset.get('browser_download_url') ==
+                 expected.rsplit('/', 1)[0] + '/crowsnest' for asset in assets):
+        raise Error('Release is missing the standalone manager asset')
     return data
+
+
+def manager_info():
+    return {'version': MANAGER_VERSION, 'minimumProtocol': MIN_PROTOCOL, 'protocol': PROTOCOL}
+
+
+def refresh_manager(manager, release, executable=None):
+    """Explicitly replace this executable after verifying the published asset."""
+    if (manager.directory / 'pending.json').exists():
+        raise Error('Complete pending collector rollback before refreshing the manager')
+    target = Path(executable) if executable is not None else Path(__file__).absolute()
+    if target.is_symlink() or not target.is_file():
+        raise Error('Manager executable must be a regular file, not a symbolic link')
+    info = target.stat()
+    if info.st_uid != os.geteuid() or info.st_mode & 0o022:
+        raise Error('Manager executable must be owned by this user and not writable by others')
+    metadata = release['manager']
+    if version(metadata['version']) < version(MANAGER_VERSION):
+        raise Error('Refusing to downgrade the manager')
+    url = ('https://github.com/' + REPOSITORY + '/releases/download/collector-v'
+           + release['version'] + '/crowsnest')
+    body = download_bytes(url)
+    if hashlib.sha256(body).hexdigest() != metadata['sha256']:
+        raise Error('Manager checksum mismatch; installed executable was not changed')
+    # Syntax validation produces no bytecode or side effects.
+    try:
+        compile(body, str(target), 'exec')
+    except (SyntaxError, ValueError) as exc:
+        raise Error('Downloaded manager is not valid Python') from exc
+    original = target.read_bytes()
+    fd, temporary = tempfile.mkstemp(prefix='.crowsnest-manager-', dir=target.parent)
+    temporary = Path(temporary)
+    try:
+        with os.fdopen(fd, 'wb') as stream:
+            os.fchmod(stream.fileno(), 0o700)
+            stream.write(body)
+            stream.flush()
+            os.fsync(stream.fileno())
+        probe = json.loads(run([sys.executable, '-I', '-B', str(temporary), 'manager-info'], timeout=30))
+        if (probe.get('version') != metadata['version']
+                or type(probe.get('minimumProtocol')) is not int or type(probe.get('protocol')) is not int
+                or not 1 <= probe['minimumProtocol'] <= release['protocol'] <= probe['protocol'] <= 65535):
+            raise Error('Downloaded manager does not support the advertised release')
+        # An unrelated replacement must not be silently overwritten.
+        if target.is_symlink() or target.stat().st_ino != info.st_ino or target.read_bytes() != original:
+            raise Error('Manager executable changed during refresh; retry from the current executable')
+        backup = manager.directory / 'manager.previous'
+        if backup.is_symlink():
+            raise Error('Refusing a symbolic link for the manager backup')
+        backup_fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o700)
+        with os.fdopen(backup_fd, 'wb') as stream:
+            os.fchmod(stream.fileno(), 0o700)
+            stream.write(original)
+            stream.flush()
+            os.fsync(stream.fileno())
+        backup_directory = os.open(manager.directory, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(backup_directory)
+        finally:
+            os.close(backup_directory)
+        os.replace(temporary, target)
+        directory = os.open(target.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        temporary.unlink(missing_ok=True)
+    print('Manager ' + metadata['version'] + ' installed. Collector containers were not restarted.')
 
 
 def latest_version(current=None, patch_only=False):
@@ -341,7 +441,7 @@ class Manager:
         state = read_json(self.directory / 'state.json', {})
         policy = read_json(self.directory / 'auto-update.json', {})
         status = read_json(self.public / 'update-status.json', {})
-        return {'installedVersion': state.get('version'), 'autoUpdates': bool(policy.get('enabled')),
+        return {'installedVersion': state.get('version'), 'manager': manager_info(), 'autoUpdates': bool(policy.get('enabled')),
                 'window': policy.get('window'), 'timezone': policy.get('timezone'),
                 'pendingRecovery': (self.directory / 'pending.json').exists(), 'lastUpdate': status}
 
@@ -432,7 +532,7 @@ class Manager:
             if not self.engine.healthy(self.directory / 'candidate.json', self.timeout):
                 raise Error('Updated collector did not deliver a report before the verification timeout')
             atomic_json(self.directory / 'previous.json', previous)
-            self.save_active(desired, {'version': selected, 'protocol': PROTOCOL, 'images': release['images'],
+            self.save_active(desired, {'version': selected, 'protocol': release['protocol'], 'images': release['images'],
                                        'daemonId': self.engine.daemon_id})
             self.publish('updated', current, selected, 'not_needed')
             (self.directory / 'blocked-version.json').unlink(missing_ok=True)
@@ -513,7 +613,11 @@ def auto_update(manager, args):
             print('Automatic retry skipped for previously rolled-back collector ' + selected + '; retry manually or wait for a newer release')
             return
         # Fetch/pull can take time. Check the window again immediately before disruption.
-        release = manifest_for(selected)
+        try:
+            release = manifest_for(selected)
+        except Error:
+            manager.publish('failed', current, selected, 'not_needed')
+            raise
         if not in_window(policy):
             return
         manager.update(release, window_policy=policy)
@@ -572,9 +676,10 @@ def main():
     parser.add_argument('--timeout', type=int, default=240, help='Report verification timeout in seconds (30-1800)')
     commands = parser.add_subparsers(dest='command', required=True)
     commands.add_parser('status')
-    for name in ('migrate', 'update'):
+    commands.add_parser('manager-info', help='Show manager version and supported reporting protocols')
+    for name in ('migrate', 'update', 'self-update'):
         child = commands.add_parser(name)
-        child.add_argument('--version', help='Published stable collector version (default newest compatible protocol)')
+        child.add_argument('--version', help='Published stable collector release (default newest; compatibility checked before deployment)')
     commands.add_parser('rollback')
     automatic = commands.add_parser('auto-update').add_subparsers(dest='action', required=True)
     enable = automatic.add_parser('enable')
@@ -585,6 +690,9 @@ def main():
     args = parser.parse_args()
     manager = None
     try:
+        if args.command == 'manager-info':
+            print(json.dumps(manager_info()))
+            return 0
         if not 30 <= args.timeout <= 1800:
             raise Error('Verification timeout must be 30-1800 seconds')
         if not args.directory.is_dir():
@@ -594,13 +702,22 @@ def main():
             print(json.dumps(manager.status(), indent=2))
             return 0
         manager.acquire()
-        if not (args.command == 'auto-update' and args.action == 'disable'):
+        if args.command != 'self-update' and not (args.command == 'auto-update' and args.action == 'disable'):
             manager.engine = Engine(manager.root)
         if args.command in ('migrate', 'update'):
             manager.recover()
             selected = args.version or latest_version()
-            manager.update(manifest_for(selected), migrate=args.command == 'migrate')
+            try:
+                release = manifest_for(selected)
+            except Error:
+                current = read_json(manager.directory / 'state.json', {}).get('version')
+                manager.publish('failed', current, selected, 'not_needed')
+                raise
+            manager.update(release, migrate=args.command == 'migrate')
             print('Collector ' + selected + ' is reporting successfully')
+        elif args.command == 'self-update':
+            selected = args.version or latest_version()
+            refresh_manager(manager, manifest_for(selected, for_manager=True))
         elif args.command == 'rollback':
             manager.rollback()
             print('Previous collector deployment restored and reporting verified')

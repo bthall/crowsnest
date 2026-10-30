@@ -471,7 +471,7 @@ function renderPanels() {
   const current=alerts(); $('alert-count').textContent=current.length;
   if(view==='alerts') {
     $('alerts-status').textContent=current.length?current.length+' current alert(s)':'No current alerts for this view.';
-    $('alerts-list').replaceChildren(...current.map(a=>{const li=node('li');const button=node('button','event-link',a.host.name);button.setAttribute('aria-label','View '+a.host.name+': '+a.text);button.onclick=()=>{view='containers';selectHost(a.host.id);if(a.containerId)openContainerDetails(a.host.id,a.containerId);};li.append(button,node('p','',a.text));if(inMaintenance(a.host))li.append(node('p','input-help',maintenanceText(a.host)));return li;}));
+    $('alerts-list').replaceChildren(...current.map(a=>{const li=node('li');const button=node('button','event-link',a.host.name);button.setAttribute('aria-label','View '+a.host.name+': '+a.text);button.onclick=()=>{view='containers';selectHost(a.host.id);if(a.containerId)openContainerDetails(a.host.id,a.containerId);else $('containers').focus({preventScroll:true});};li.append(button,node('p','',a.text));if(inMaintenance(a.host))li.append(node('p','input-help',maintenanceText(a.host)));return li;}));
   }
   if(view==='activity') {
     $('activity-status').textContent=historyError || (historyLoading?'Loading recent activity…':!historyEvents.length?'No recent changes recorded. Activity will appear as reports arrive.':'Showing '+historyEvents.length+' recent events.');

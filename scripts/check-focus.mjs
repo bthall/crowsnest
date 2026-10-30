@@ -41,5 +41,6 @@ assert.equal(document.activeElement, moved, 'An async response must preserve the
 assert.equal(restore(null, contextHeading), contextHeading);
 
 assert.ok(source.includes("restoreFocus(focused, $('fleet-view'))"), 'loadHosts must restore focus with fleet-view as the fallback element');
+assert.ok(source.includes("else $('containers').focus({preventScroll:true})"), 'alert button click handler must focus containers section when no containerId exists');
 
 console.log('Focus checks passed: initiator, retry fallback, unavailable contexts and newer user focus');

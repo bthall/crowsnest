@@ -9,6 +9,7 @@ let hostGroup = '', groupOptionsKey = '';
 let initialLinkApplied = false;
 let resourceHost = null, resourceSamples = [], resourceError = '', resourceLoading = false, resourceSequence = 0, resourceController = null;
 let availableCollectorVersion = null, collectorUpdateTarget = null, collectorUpdateRequestedAt = 0, collectorUpdatePreviousVersion = null, collectorUpdateBusy = false;
+let collectorProtocol = null, minimumCollectorProtocol = null;
 let detailSelection = null, detailEvents = [], detailHistoryError = '', detailHistoryLoading = false, detailHistorySequence = 0, detailHistoryController = null, detailLegacyMatches = false;
 const $ = id => document.getElementById(id);
 if(document.body.dataset.authMode==='standalone'){
@@ -61,8 +62,24 @@ function collectorInfo(host) {
   if(!host?.snapshot)return {text:'Collector awaiting first report',short:'',comparison};
   if(!validCollectorVersion(version))return {text:'Collector version unknown — update for version reporting',short:'Collector version unknown',comparison};
   const fresh=hostState(host)==='Reporting' && !lastError;
-  const status=comparison===0?'current':comparison===-1?'update available to v'+availableCollectorVersion:comparison===1?'newer than this dashboard':'available version unknown';
-  return {text:'Collector v'+version+' · '+status+(fresh?'':' (last reported)'),short:'Collector v'+version+(comparison===-1?' · update available':''),comparison};
+  const protocol=host.snapshot.collectorProtocol;
+  const required=Number.isSafeInteger(protocol) && minimumCollectorProtocol!==null && protocol<minimumCollectorProtocol;
+  const dashboardRequired=Number.isSafeInteger(protocol) && collectorProtocol!==null && protocol>collectorProtocol;
+  const status=required?'update required for protocol compatibility':dashboardRequired?'dashboard update required for protocol compatibility':comparison===0?'current':comparison===-1?'update available to v'+availableCollectorVersion:comparison===1?'newer than the recommended collector':'available version unknown';
+  return {text:'Collector v'+version+' · '+status+(fresh?'':' (last reported)'),short:'Collector v'+version+(required?' · update required':dashboardRequired?' · update dashboard':comparison===-1?' · update available':''),comparison,required,dashboardRequired};
+}
+function updaterInfo(host) {
+  const status=host?.snapshot?.updateStatus;
+  if(!status)return {policy:'Updater status not reported. Automatic updates require explicit setup on the host.',result:''};
+  const suffix=hostState(host)==='Reporting' && !lastError?'':' (last reported)';
+  const policy=(status.autoUpdates?'Automatic updates enabled on this host':'Automatic updates disabled; updates are manual')+suffix+'.';
+  const results={updated:'Update succeeded',rolled_back:'Update failed; previous deployment restored',failed:'Update failed',rollback_failed:'Update and rollback failed; host intervention required',no_update:'No compatible update available'};
+  let result=results[status.lastResult]||'No update attempt reported';
+  if(status.fromVersion && status.toVersion)result+=' (v'+status.fromVersion+' → v'+status.toVersion+')';
+  if(status.rollback==='succeeded' && status.lastResult!=='rolled_back')result+='; rollback succeeded';
+  if(status.rollback==='failed' && status.lastResult!=='rollback_failed')result+='; rollback failed';
+  if(status.lastAttempt)result+=' · '+reportDate(status.lastAttempt);
+  return {policy,result:result+'.'};
 }
 function syncHosts() {
   const focusedHost=document.activeElement?.dataset.host;
@@ -255,6 +272,8 @@ async function loadHosts() {
     const data = await response.json();
     if (!Array.isArray(data.hosts)) throw new Error('Unexpected status response. Try Refresh.');
     hosts = data.hosts;availableCollectorVersion=validCollectorVersion(data.availableCollectorVersion)?data.availableCollectorVersion:null;
+    collectorProtocol=Number.isSafeInteger(data.collectorProtocol) && data.collectorProtocol>0?data.collectorProtocol:null;
+    minimumCollectorProtocol=Number.isSafeInteger(data.minimumCollectorProtocol) && data.minimumCollectorProtocol>0?data.minimumCollectorProtocol:null;
     if (selected !== null && !hosts.some(h => h.id === selected)) selected = null;
     loaded = true; lastError = '';
     if(!initialLinkApplied){initialLinkApplied=true;applyDashboardLink();}
@@ -445,9 +464,12 @@ $('copy-container-id').onclick=async()=>{
 function updateCollectorVersion() {
   const host=hosts.find(h=>h.id===managedId);if(!host)return;
   const info=collectorInfo(host);
+  const updater=updaterInfo(host);
   $('managed-collector-version').textContent=info.text;
-  $('managed-collector-freshness').textContent=host.snapshot?'Last report: '+reportDate(host.snapshot.receivedAt)+'. Available with this dashboard: '+(availableCollectorVersion?'v'+availableCollectorVersion:'unknown')+'.':'The first report will show this collector’s version.';
-  $('prepare-update').disabled=collectorUpdateBusy || info.comparison===1;
+  $('managed-collector-freshness').textContent=host.snapshot?'Last report: '+reportDate(host.snapshot.receivedAt)+'. Recommended collector: '+(availableCollectorVersion?'v'+availableCollectorVersion:'unknown')+'.':'The first report will show this collector’s version.';
+  $('managed-auto-updates').textContent=updater.policy;
+  $('managed-update-result').textContent=updater.result;
+  $('prepare-update').disabled=collectorUpdateBusy || info.comparison===1 || info.dashboardRequired;
   if(info.comparison===1)$('managed-collector-freshness').textContent+=' This collector is newer; update the dashboard before preparing an older collector.';
   if(collectorUpdateTarget){
     const confirmed=host.snapshot?.collectorVersion===collectorUpdateTarget && Date.parse(host.snapshot.receivedAt)>collectorUpdateRequestedAt;
@@ -671,7 +693,7 @@ $('rotate-token').onclick=async()=>{
     const blob=await response.blob();if(!managementCurrent(session,id))return;
     if(configUrl)URL.revokeObjectURL(configUrl);configUrl=URL.createObjectURL(blob);
     $('config-download').href=configUrl;rotationRevision=revision;rotationExpiry=Date.now()+600000;
-    $('rotation-commands').textContent="bash <<'CROWSNEST_ROTATE'\nset -eu\n"+collectorDirectoryCommands().join('\n')+'\ntest -O .\ninstall -m 0600 ~/Downloads/collector.json ./collector.json\nsudo docker compose up -d --force-recreate collector\nCROWSNEST_ROTATE';
+    $('rotation-commands').textContent="bash <<'CROWSNEST_ROTATE'\nset -eu\n"+collectorDirectoryCommands().join('\n')+'\ntest -O .\ninstall -m 0600 ~/Downloads/collector.json ./collector.json\n'+collectorRestartCommands().join('\n')+'\nCROWSNEST_ROTATE';
     $('rotation-result').hidden=false;updateEnrollment();$('config-download').focus();
   }catch(error){if(managementCurrent(session,id))showError('management-message',error);}finally{if(managementCurrent(session,id))$('rotate-token').disabled=false;}
 };

@@ -5,8 +5,11 @@
 !LICENSE
 !scripts/
 !scripts/build-board.mjs
+!scripts/collector-metadata.mjs
 !worker/
 !worker/**
+!collector/
+!collector/**
 !server/
 !server/**
 **/node_modules

@@ -1,4 +1,7 @@
 node_modules/
+.crowsnest/
+__pycache__/
+*.pyc
 dist/
 .env
 .env.*

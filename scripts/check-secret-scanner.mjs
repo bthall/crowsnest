@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {mkdtempSync,writeFileSync,rmSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {execFileSync,spawnSync} from 'node:child_process';
@@ -27,6 +27,8 @@ try {
   check('collector.json','{}',true);
   check('crowsnest-setup.sh','# generated installer',true);
   check('.env','DEMO=example',true);
+  mkdirSync(join(root,'.crowsnest'));
+  check('.crowsnest/active.json','{}',true);
   const siteId='appgprj_'+'a'.repeat(32);
   check('hosting.json',JSON.stringify({project_id:siteId}),false);
   check('hosting.json',JSON.stringify({project_id:siteId}),true,['--public']);

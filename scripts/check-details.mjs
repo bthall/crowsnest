@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {testBucket} from './test-storage.mjs';
-const version=JSON.parse(await readFile('package.json','utf8')).version;
+const version=JSON.parse(await readFile('collector/version.json','utf8')).version;
 const helpers=await readFile('worker/versions.js','utf8');
 const {validCollectorVersion,compareCollectorVersions}=await import('data:text/javascript;base64,'+Buffer.from(helpers+'\nexport {validCollectorVersion,compareCollectorVersions};').toString('base64'));
 for(const v of ['0.7.0','1.0.0-alpha.1','1.0.0-rc.10+build.001','999999999999999999.0.0'])assert.ok(validCollectorVersion(v));
@@ -25,7 +25,7 @@ let data=await (await call('/api/hosts')).json();assert.equal(data.availableColl
 for(const invalid of [null,{},'',7,'v0.7.0','01.2.3','1.0.0-01','x'.repeat(65)]){report.collectorVersion=invalid;assert.equal((await send()).status,400);}
 report.collectorVersion=version;await send();
 data=await (await call('/api/hosts')).json();assert.equal(data.hosts[0].snapshot.collectorVersion,version);assert.ok(!JSON.stringify(data).includes(config.hostToken));
-const update=await (await call('/api/hosts/'+host+'/collector','POST',{format:'update'})).json();assert.equal(update.collectorVersion,version);assert.ok(update.updateCommand.includes("COLLECTOR_VERSION = '"+version+"'"));assert.ok(!update.updateCommand.includes('__APP_VERSION__'));
+const update=await (await call('/api/hosts/'+host+'/collector','POST',{format:'update'})).json();assert.equal(update.collectorVersion,version);assert.ok(update.updateCommand.includes('./crowsnest migrate --version '+version));assert.ok(!update.updateCommand.includes('__UPDATE_MANAGER_SOURCE__'));assert.ok(!update.updateCommand.includes(config.hostToken));
 for(const headers of [{},auth,{Authorization:'Bearer '+env.COLLECTOR_SERVICE_TOKEN}])assert.equal((await call(historyPath,'GET',undefined,headers)).status,401);
 for(const path of ['/api/history?container='+id,'/api/history?host='+host+'&container=../x','/api/history?host=bad&container='+id])assert.equal((await call(path)).status,400);
 assert.equal((await call('/api/history?host=00000000-0000-4000-8000-000000000000&container='+id)).status,404);

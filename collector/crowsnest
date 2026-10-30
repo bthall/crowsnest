@@ -1,0 +1,765 @@
+#!/usr/bin/env python3
+"""Host-side Crowsnest image manager. Python standard library; no daemon privileges in collector."""
+import argparse
+import copy
+import datetime as dt
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shlex
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+REPOSITORY = 'bthall/crowsnest'
+# Release packaging embeds the same metadata used by the images and dashboard.
+# The source checkout can read it directly for development and regression tests.
+BUILD_METADATA = '__MANAGER_METADATA__'
+METADATA = (json.loads((Path(__file__).parent / 'version.json').read_text())
+            if BUILD_METADATA.startswith('__') else json.loads(BUILD_METADATA))
+PROTOCOL = METADATA['protocol']
+MIN_PROTOCOL = METADATA['minimumProtocol']
+MANAGER_VERSION = METADATA['managerVersion']
+IMAGES = {'collector': 'ghcr.io/bthall/crowsnest-collector',
+          'proxy': 'ghcr.io/bthall/crowsnest-socket-proxy'}
+SERVICES = ('socket-proxy', 'collector')
+VERSION_RE = re.compile(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\Z')
+RESULTS = {'updated', 'rolled_back', 'failed', 'rollback_failed', 'no_update'}
+
+
+class Error(RuntimeError):
+    pass
+
+
+def version(value):
+    if not isinstance(value, str) or len(value) > 64 or not VERSION_RE.fullmatch(value):
+        raise Error('Expected a stable collector version, for example 0.11.1')
+    return tuple(map(int, value.split('.')))
+
+
+def now():
+    return dt.datetime.now(dt.timezone.utc).isoformat().replace('+00:00', 'Z')
+
+
+def read_json(path, default=None):
+    try:
+        if path.is_symlink():
+            raise Error('Refusing a symbolic link in manager state')
+        return json.loads(path.read_text())
+    except FileNotFoundError:
+        return copy.deepcopy(default)
+
+
+def atomic_json(path, value, mode=0o600):
+    temporary = path.with_name(path.name + '.new')
+    if path.is_symlink() or temporary.is_symlink():
+        raise Error('Refusing a symbolic link in manager state')
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, mode)
+    try:
+        with os.fdopen(fd, 'w') as stream:
+            os.fchmod(stream.fileno(), mode)
+            json.dump(value, stream, indent=2)
+            stream.write('\n')
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def run(args, cwd=None, capture=True, timeout=120):
+    try:
+        result = subprocess.run(args, cwd=cwd, text=True, stdout=subprocess.PIPE if capture else None,
+                                stderr=subprocess.PIPE, timeout=timeout, check=False)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise Error('Command unavailable or timed out: ' + str(args[0])) from exc
+    if result.returncode:
+        # Docker config/inspect errors can contain private environment values.
+        raise Error('Command failed: ' + str(args[0]) + ' (exit ' + str(result.returncode) + ')')
+    return result.stdout or ''
+
+
+class HTTPSOnly(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        url = urllib.parse.urlsplit(newurl)
+        if url.scheme != 'https' or url.username or url.password:
+            raise Error('Refusing an insecure release redirect')
+        return super().redirect_request(request, fp, code, msg, headers, newurl)
+
+
+def download_bytes(url, limit=1048576):
+    request = urllib.request.Request(url, headers={'Accept': 'application/vnd.github+json',
+                                                  'User-Agent': 'crowsnest-collector-manager/1'})
+    try:
+        with urllib.request.build_opener(HTTPSOnly()).open(request, timeout=30) as response:
+            body = response.read(limit + 1)
+            if len(body) > limit:
+                raise Error('Release download exceeds the size limit')
+            return body
+    except urllib.error.URLError as exc:
+        raise Error('Unable to read collector release metadata') from exc
+
+
+def download_json(url):
+    try:
+        return json.loads(download_bytes(url))
+    except ValueError as exc:
+        raise Error('Invalid collector release metadata') from exc
+
+
+def manifest_for(selected, for_manager=False):
+    version(selected)
+    release = download_json('https://api.github.com/repos/' + REPOSITORY + '/releases/tags/collector-v' + selected)
+    if (not isinstance(release, dict) or release.get('draft') or release.get('prerelease')
+            or release.get('tag_name') != 'collector-v' + selected):
+        raise Error('Collector release is not a published stable release')
+    expected = 'https://github.com/' + REPOSITORY + '/releases/download/collector-v' + selected + '/collector-release.json'
+    assets = release.get('assets', [])
+    if not any(asset.get('name') == 'collector-release.json' and asset.get('browser_download_url') == expected for asset in assets):
+        raise Error('Collector release has no immutable image manifest')
+    data = download_json(expected)
+    if (not isinstance(data, dict) or type(data.get('schema')) is not int or data.get('schema') != 1
+            or type(data.get('protocol')) is not int or not 1 <= data['protocol'] <= 65535
+            or data.get('version') != selected or not isinstance(data.get('images'), dict)):
+        raise Error('Collector release is incompatible with this manager')
+    for role, repository in IMAGES.items():
+        value = data['images'].get(role)
+        if not isinstance(value, str) or not re.fullmatch(re.escape(repository) + r'@sha256:[0-9a-f]{64}', value):
+            raise Error('Collector manifest must pin both trusted images by digest')
+    manager = data.get('manager')
+    if (not isinstance(manager, dict) or not isinstance(manager.get('sha256'), str)
+            or not re.fullmatch('[a-f0-9]{64}', manager['sha256'])):
+        raise Error('Release is missing verified manager metadata')
+    if version(manager.get('minimumVersion')) > version(manager.get('version')):
+        raise Error('Release requires a newer manager than it provides')
+    if not for_manager:
+        if version(MANAGER_VERSION) < version(manager['minimumVersion']):
+            raise Error('Collector ' + selected + ' requires manager ' + manager['minimumVersion']
+                        + '; run ./crowsnest self-update --version ' + selected + ' first')
+        if not MIN_PROTOCOL <= data['protocol'] <= PROTOCOL:
+            raise Error('Collector protocol is unsupported; run ./crowsnest self-update --version '
+                        + selected + ' before this upgrade')
+    elif not any(asset.get('name') == 'crowsnest' and asset.get('browser_download_url') ==
+                 expected.rsplit('/', 1)[0] + '/crowsnest' for asset in assets):
+        raise Error('Release is missing the standalone manager asset')
+    return data
+
+
+def manager_info():
+    return {'version': MANAGER_VERSION, 'minimumProtocol': MIN_PROTOCOL, 'protocol': PROTOCOL}
+
+
+def refresh_manager(manager, release, executable=None):
+    """Explicitly replace this executable after verifying the published asset."""
+    if (manager.directory / 'pending.json').exists():
+        raise Error('Complete pending collector rollback before refreshing the manager')
+    target = Path(executable) if executable is not None else Path(__file__).absolute()
+    if target.is_symlink() or not target.is_file():
+        raise Error('Manager executable must be a regular file, not a symbolic link')
+    info = target.stat()
+    if info.st_uid != os.geteuid() or info.st_mode & 0o022:
+        raise Error('Manager executable must be owned by this user and not writable by others')
+    metadata = release['manager']
+    if version(metadata['version']) < version(MANAGER_VERSION):
+        raise Error('Refusing to downgrade the manager')
+    url = ('https://github.com/' + REPOSITORY + '/releases/download/collector-v'
+           + release['version'] + '/crowsnest')
+    body = download_bytes(url)
+    if hashlib.sha256(body).hexdigest() != metadata['sha256']:
+        raise Error('Manager checksum mismatch; installed executable was not changed')
+    # Syntax validation produces no bytecode or side effects.
+    try:
+        compile(body, str(target), 'exec')
+    except (SyntaxError, ValueError) as exc:
+        raise Error('Downloaded manager is not valid Python') from exc
+    original = target.read_bytes()
+    fd, temporary = tempfile.mkstemp(prefix='.crowsnest-manager-', dir=target.parent)
+    temporary = Path(temporary)
+    try:
+        with os.fdopen(fd, 'wb') as stream:
+            os.fchmod(stream.fileno(), 0o700)
+            stream.write(body)
+            stream.flush()
+            os.fsync(stream.fileno())
+        probe = json.loads(run([sys.executable, '-I', '-B', str(temporary), 'manager-info'], timeout=30))
+        if (probe.get('version') != metadata['version']
+                or type(probe.get('minimumProtocol')) is not int or type(probe.get('protocol')) is not int
+                or not 1 <= probe['minimumProtocol'] <= release['protocol'] <= probe['protocol'] <= 65535):
+            raise Error('Downloaded manager does not support the advertised release')
+        # An unrelated replacement must not be silently overwritten.
+        if target.is_symlink() or target.stat().st_ino != info.st_ino or target.read_bytes() != original:
+            raise Error('Manager executable changed during refresh; retry from the current executable')
+        backup = manager.directory / 'manager.previous'
+        if backup.is_symlink():
+            raise Error('Refusing a symbolic link for the manager backup')
+        backup_fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o700)
+        with os.fdopen(backup_fd, 'wb') as stream:
+            os.fchmod(stream.fileno(), 0o700)
+            stream.write(original)
+            stream.flush()
+            os.fsync(stream.fileno())
+        backup_directory = os.open(manager.directory, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(backup_directory)
+        finally:
+            os.close(backup_directory)
+        os.replace(temporary, target)
+        directory = os.open(target.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        temporary.unlink(missing_ok=True)
+    print('Manager ' + metadata['version'] + ' installed. Collector containers were not restarted.')
+
+
+def latest_version(current=None, patch_only=False):
+    candidates = []
+    baseline = version(current) if current else None
+    for page in range(1, 11):
+        releases = download_json('https://api.github.com/repos/' + REPOSITORY + '/releases?per_page=100&page=' + str(page))
+        if not isinstance(releases, list):
+            raise Error('Invalid GitHub release listing')
+        for release in releases:
+            tag = release.get('tag_name', '')
+            value = tag.removeprefix('collector-v')
+            if not tag.startswith('collector-v') or release.get('draft') or release.get('prerelease'):
+                continue
+            try:
+                parsed = version(value)
+            except Error:
+                continue
+            if patch_only and (not baseline or parsed[:2] != baseline[:2]):
+                continue
+            if not baseline or parsed >= baseline:
+                candidates.append((parsed, value))
+        if len(releases) < 100:
+            break
+    else:
+        raise Error('Release listing exceeds the safe pagination bound; select --version explicitly')
+    if not candidates:
+        raise Error('No compatible published collector release was found')
+    return max(candidates)[1]
+
+
+class Engine:
+    def __init__(self, root):
+        self.root = root
+        self.command = ['docker']
+        try:
+            self.daemon_id = run(self.command + ['info', '--format', '{{.ID}}'], cwd=root).strip()
+        except Error:
+            self.command = ['sudo', '-n', 'docker']
+            self.daemon_id = run(self.command + ['info', '--format', '{{.ID}}'], cwd=root).strip()
+        if not re.fullmatch(r'[A-Za-z0-9:_-]{1,128}', self.daemon_id):
+            raise Error('Docker daemon did not provide a stable identity')
+        run(self.command + ['compose', 'version'], cwd=root)
+
+    def compose(self, config=None):
+        args = self.command + ['compose', '--project-directory', str(self.root)]
+        if config:
+            canonical = read_json(config)
+            # `compose config` escapes dollars for reusable output. Internally
+            # keep literal values so newly added paths and captured user values
+            # share one representation, and escape only at the execution edge.
+            execution = config.parent / 'execution-compose.json'
+            atomic_json(execution, json.loads(json.dumps(canonical).replace('$', '$$')))
+            args += ['-p', canonical['name'], '-f', str(execution)]
+        return args
+
+    def resolve(self):
+        # Docker owns Compose-file discovery, interpolation, .env and custom overrides.
+        # Docker Compose doubles dollars in JSON config output as well as YAML.
+        # Undo that output quoting before manipulating the canonical snapshot.
+        data = json.loads(run(self.compose() + ['config', '--format', 'json'], cwd=self.root).replace('$$', '$'))
+        if not isinstance(data, dict) or not isinstance(data.get('services'), dict):
+            raise Error('Unable to resolve the installation Compose configuration')
+        if not isinstance(data.get('name'), str) or not re.fullmatch(r'[a-z0-9][a-z0-9_-]*', data['name']):
+            raise Error('Compose configuration has no valid project name')
+        if not all(service in data['services'] for service in SERVICES):
+            raise Error('Compose configuration must contain collector and socket-proxy services')
+        return data
+
+    def capture(self, data, source):
+        """Use actual running image IDs for rollback, including mutable legacy tags."""
+        result = copy.deepcopy(data)
+        installed = None
+        for service in SERVICES:
+            ids = run(self.compose(source) + ['ps', '-q', service], cwd=self.root).split()
+            if len(ids) != 1:
+                raise Error('Exactly one running ' + service + ' container is required before updating')
+            info = json.loads(run(self.command + ['container', 'inspect', ids[0]], cwd=self.root))[0]
+            if not info.get('State', {}).get('Running') or not re.fullmatch(r'sha256:[a-f0-9]{64}', info.get('Image', '')):
+                raise Error('The existing collector deployment is not running')
+            result['services'][service]['image'] = info['Image']
+            if service == 'collector':
+                installed = (info.get('Config', {}).get('Labels') or {}).get('org.opencontainers.image.version')
+        return result, installed
+
+    def pull(self, images):
+        for reference in images.values():
+            run(self.command + ['pull', reference], cwd=self.root, timeout=600)
+
+    def deploy(self, path):
+        run(self.compose(path) + ['up', '-d', '--no-build', '--pull', 'never', '--force-recreate',
+                                 '--no-deps', *SERVICES], cwd=self.root, timeout=180)
+
+    def recreate_collector(self, path):
+        run(self.compose(path) + ['up', '-d', '--no-build', '--pull', 'never', '--force-recreate',
+                                 '--no-deps', 'collector'], cwd=self.root, timeout=180)
+
+    def healthy(self, path, timeout):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                ids = [run(self.compose(path) + ['ps', '-q', service], cwd=self.root).strip() for service in SERVICES]
+                if all(ids):
+                    states = json.loads(run(self.command + ['container', 'inspect', *ids], cwd=self.root))
+                    if len(states) == 2 and all(item.get('State', {}).get('Running') and
+                            item.get('State', {}).get('Health', {}).get('Status', 'healthy') == 'healthy' for item in states):
+                        collector = states[1]
+                        started = dt.datetime.fromisoformat(collector['State']['StartedAt'].replace('Z', '+00:00')).timestamp()
+                        run(self.command + ['exec', ids[0], 'wget', '-q', '-O', '/dev/null',
+                                            'http://127.0.0.1:2375/version'], cwd=self.root)
+                        try:
+                            run(self.command + ['exec', ids[1], 'python', '-c',
+                                "import pathlib,time,sys; p=pathlib.Path('/tmp/crowsnest-last-success'); "
+                                "raise SystemExit(0 if p.exists() and p.stat().st_mtime>=float(sys.argv[1]) "
+                                "and 0<=time.time()-p.stat().st_mtime<180 else 1)", str(started)], cwd=self.root)
+                        except Error:
+                            # Original source deployments could not write a marker on their
+                            # read-only filesystem. A post-recreation accepted-delivery log
+                            # is the backward-compatible recovery proof for those installs.
+                            if not legacy_mount(read_json(path)):
+                                raise
+                            logs = run(self.command + ['logs', '--since', collector['State']['StartedAt'],
+                                                       '--tail', '20', ids[1]], cwd=self.root)
+                            if not re.search(r'^Status delivered: [0-9]+ containers$', logs, re.MULTILINE):
+                                raise Error('Legacy collector has not confirmed an accepted report')
+                        return True
+            except (Error, ValueError, KeyError):
+                pass
+            time.sleep(min(3, max(0, deadline - time.monotonic())))
+        return False
+
+
+def legacy_mount(data):
+    targets = {'collector': '/app/collector.py', 'socket-proxy': '/usr/local/etc/haproxy/haproxy.cfg'}
+    return any(mount.get('target') == targets[service] for service in SERVICES
+               for mount in data['services'][service].get('volumes', []) if isinstance(mount, dict))
+
+
+def target_config(base, release, root, migrate):
+    result = copy.deepcopy(base)
+    if legacy_mount(result) and not migrate:
+        raise Error('Legacy source deployment detected. Run crowsnest migrate once to adopt packaged images')
+    for service, role, target, filename in [('collector', 'collector', '/app/collector.py', 'collector.py'),
+                                          ('socket-proxy', 'proxy', '/usr/local/etc/haproxy/haproxy.cfg', 'proxy.cfg')]:
+        settings = result['services'][service]
+        if settings.get('build') or settings.get('entrypoint'):
+            raise Error('Custom builds/entrypoints require manual migration')
+        expected_command = ['python', '-u', '/app/collector.py'] if service == 'collector' else None
+        if settings.get('command') not in (None, expected_command):
+            raise Error('Custom service commands require manual migration')
+        mounts = settings.get('volumes', [])
+        retained = []
+        for mount in mounts:
+            if not isinstance(mount, dict):
+                raise Error('Expected fully resolved Compose mounts')
+            if mount.get('target') == target:
+                if mount.get('type') != 'bind' or Path(mount.get('source', '')).resolve() != root / filename:
+                    raise Error('Custom collector source/proxy configuration mounts require manual migration')
+                continue
+            if mount.get('target') == '/run/crowsnest':
+                if mount.get('type') != 'bind' or Path(mount.get('source', '')).resolve() != root / '.crowsnest' / 'status':
+                    raise Error('Custom /run/crowsnest mount conflicts with updater status')
+                continue
+            retained.append(mount)
+        settings['image'] = release['images'][role]
+        settings.pop('pull_policy', None)
+        settings['volumes'] = retained
+    result['services']['collector']['volumes'].append({'type': 'bind', 'source': str(root / '.crowsnest' / 'status'),
+                                                       'target': '/run/crowsnest', 'read_only': True,
+                                                       'bind': {'create_host_path': False}})
+    collector = result['services']['collector']
+    if not collector.get('healthcheck') and migrate:
+        collector['healthcheck'] = {'test': ['CMD', 'python', '-c',
+            "import pathlib,time; p=pathlib.Path('/tmp/crowsnest-last-success'); "
+            "raise SystemExit(0 if p.exists() and 0<=time.time()-p.stat().st_mtime<180 else 1)"],
+            'interval': '30s', 'timeout': '8s', 'retries': 3, 'start_period': '120s'}
+    health = collector.get('healthcheck', {})
+    if health.get('disable') or 'crowsnest-last-success' not in json.dumps(health.get('test')):
+        raise Error('Custom collector healthcheck does not verify reporting; migrate it manually')
+    tmpfs = collector.setdefault('tmpfs', [])
+    if not isinstance(tmpfs, list):
+        raise Error('Expected resolved Compose tmpfs list')
+    if not any(value.split(':', 1)[0] == '/tmp' for value in tmpfs):
+        if any(mount.get('target') == '/tmp' for mount in collector.get('volumes', [])):
+            raise Error('Custom /tmp mount requires manual migration for fresh-report verification')
+        tmpfs.append('/tmp:rw,nosuid,nodev,noexec,size=1m,mode=1777')
+    return result
+
+
+class Manager:
+    def __init__(self, root, engine=None, timeout=240):
+        self.root = root.resolve()
+        self.directory = self.root / '.crowsnest'
+        if self.directory.is_symlink():
+            raise Error('Refusing a symbolic link for manager state')
+        self.directory.mkdir(mode=0o700, exist_ok=True)
+        if self.directory.stat().st_uid != os.geteuid() or self.directory.stat().st_mode & 0o077:
+            raise Error('Manager state must be owned by this user with mode 0700')
+        self.public = self.directory / 'status'
+        if self.public.is_symlink():
+            raise Error('Refusing a symbolic link for public manager status')
+        self.public.mkdir(mode=0o755, exist_ok=True)
+        self.public.chmod(0o755)
+        self.engine = engine
+        self.timeout = timeout
+        self.lock = None
+
+    def acquire(self):
+        path = self.directory / 'lock'
+        fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        self.lock = os.fdopen(fd, 'w')
+        try:
+            fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise Error('Another collector management operation is already running') from exc
+
+    def status(self):
+        state = read_json(self.directory / 'state.json', {})
+        policy = read_json(self.directory / 'auto-update.json', {})
+        status = read_json(self.public / 'update-status.json', {})
+        return {'installedVersion': state.get('version'), 'manager': manager_info(), 'autoUpdates': bool(policy.get('enabled')),
+                'window': policy.get('window'), 'timezone': policy.get('timezone'),
+                'pendingRecovery': (self.directory / 'pending.json').exists(), 'lastUpdate': status}
+
+    def publish(self, result=None, source=None, target=None, rollback=None):
+        policy = read_json(self.directory / 'auto-update.json', {})
+        existing = read_json(self.public / 'update-status.json', {})
+        data = {key: existing.get(key) for key in ('lastAttempt', 'lastResult', 'fromVersion', 'toVersion', 'rollback')}
+        if result is not None:
+            data = {'lastAttempt': now(), 'lastResult': result, 'fromVersion': source,
+                    'toVersion': target, 'rollback': rollback}
+        data['autoUpdates'] = bool(policy.get('enabled'))
+        for key in ('lastAttempt', 'lastResult', 'fromVersion', 'toVersion', 'rollback'):
+            data.setdefault(key, None)
+        atomic_json(self.public / 'update-status.json', data, 0o644)
+
+    def source(self):
+        active = self.directory / 'active.json'
+        return active if active.exists() else None
+
+    def save_active(self, data, state):
+        atomic_json(self.directory / 'active.json', data)
+        atomic_json(self.directory / 'state.json', state)
+
+    def check_engine(self, state):
+        if state.get('daemonId') and state['daemonId'] != self.engine.daemon_id:
+            raise Error('Docker daemon differs from the managed installation; restore its original Docker context')
+
+    def restore(self, previous, result, target):
+        self.check_engine(previous['state'])
+        path = self.directory / 'recovery.json'
+        atomic_json(path, previous['config'])
+        try:
+            self.engine.deploy(path)
+            if not self.engine.healthy(path, self.timeout):
+                raise Error('Previous deployment did not resume accepted reports')
+            self.save_active(previous['config'], previous['state'])
+            self.publish(result, previous['state'].get('version'), target, 'succeeded')
+            atomic_json(self.directory / 'blocked-version.json', {'version': target})
+            (self.directory / 'pending.json').unlink(missing_ok=True)
+        except Exception as exc:
+            self.publish('rollback_failed', previous['state'].get('version'), target, 'failed')
+            atomic_json(self.directory / 'blocked-version.json', {'version': target})
+            raise Error('Rollback failed; transaction retained for crowsnest rollback recovery') from exc
+
+    def recover(self):
+        pending = read_json(self.directory / 'pending.json')
+        if pending:
+            self.restore(pending['previous'], 'rolled_back', pending.get('targetVersion'))
+
+    def update(self, release, migrate=False, window_policy=None):
+        self.recover()
+        state = read_json(self.directory / 'state.json', {})
+        self.check_engine(state)
+        if window_policy:
+            base = read_json(self.source()) if self.source() else None
+            if not base:
+                raise Error('Automatic updates require a successfully managed deployment snapshot')
+        else:
+            base = self.engine.resolve()
+        previous_base = read_json(self.source()) if self.source() else base
+        rollback_config, detected = self.engine.capture(previous_base, self.source())
+        current = state.get('version')
+        if not current and detected:
+            try:
+                version(detected)
+                current = detected
+            except Error:
+                pass
+        selected = release['version']
+        version(selected)
+        if current and version(selected) < version(current):
+            raise Error('Updates cannot downgrade; use crowsnest rollback for the previous deployment')
+        desired = target_config(base, release, self.root, migrate or bool(state.get('images') and self.source()))
+        # Even an unchanged version may have changed user overrides: apply them on explicit update.
+        previous = {'config': rollback_config, 'state': {**state, 'version': current, 'daemonId': self.engine.daemon_id}}
+        try:
+            self.engine.pull(release['images'])
+        except Exception:
+            self.publish('failed', current, selected, 'not_needed')
+            raise
+        if window_policy and not in_window(window_policy):
+            print('Image download completed after the maintenance window; update deferred')
+            return
+        atomic_json(self.directory / 'candidate.json', desired)
+        atomic_json(self.directory / 'pending.json', {'previous': previous, 'targetVersion': selected})
+        try:
+            self.engine.deploy(self.directory / 'candidate.json')
+            if not self.engine.healthy(self.directory / 'candidate.json', self.timeout):
+                raise Error('Updated collector did not deliver a report before the verification timeout')
+            atomic_json(self.directory / 'previous.json', previous)
+            self.save_active(desired, {'version': selected, 'protocol': release['protocol'], 'images': release['images'],
+                                       'daemonId': self.engine.daemon_id})
+            self.publish('updated', current, selected, 'not_needed')
+            (self.directory / 'blocked-version.json').unlink(missing_ok=True)
+            (self.directory / 'pending.json').unlink()
+        except BaseException as exc:
+            # SIGKILL/power loss leaves pending.json for the next operation.
+            self.restore(previous, 'rolled_back', selected)
+            raise Error('Update failed; previous deployment restored and reporting verified') from exc
+
+    def rollback(self):
+        if (self.directory / 'pending.json').exists():
+            self.recover()
+            return
+        previous = read_json(self.directory / 'previous.json')
+        if not previous:
+            raise Error('No previous deployment is available')
+        state = read_json(self.directory / 'state.json', {})
+        self.check_engine(state)
+        current_config = read_json(self.source())
+        if not current_config:
+            raise Error('Current deployment snapshot is missing')
+        try:
+            current_config, _ = self.engine.capture(current_config, self.source())
+        except Error:
+            # The saved active snapshot already pins immutable image references.
+            # Stopped or removed containers must not block restoration of the
+            # known previous deployment. Retain this snapshot for recovery if
+            # that restoration itself fails.
+            pass
+        current = {'config': current_config, 'state': state}
+        atomic_json(self.directory / 'pending.json', {'previous': current,
+                                                     'targetVersion': previous['state'].get('version')})
+        try:
+            self.restore(previous, 'rolled_back', state.get('version'))
+            self.publish('rolled_back', state.get('version'), previous['state'].get('version'), 'succeeded')
+            atomic_json(self.directory / 'previous.json', current)
+        except Error:
+            # Preserve known-working current deployment as the recovery target.
+            raise
+
+    def restart(self):
+        if (self.directory / 'pending.json').exists():
+            raise Error('Complete pending rollback before restarting with new credentials')
+        state = read_json(self.directory / 'state.json', {})
+        source = self.source()
+        if not source or not state.get('daemonId'):
+            raise Error('No managed deployment is available; do not fall back to legacy Compose after migration')
+        self.check_engine(state)
+        # Credentials are mounted from the existing host path. Recreating just
+        # this service picks up a replaced file without resolving legacy Compose.
+        self.engine.recreate_collector(source)
+        if not self.engine.healthy(source, self.timeout):
+            raise Error('Collector has not confirmed reporting with the current credentials; check the configuration and retry restart')
+
+
+def valid_window(value):
+    if not isinstance(value, str) or not re.fullmatch(r'(?:[01][0-9]|2[0-3]):[0-5][0-9]-(?:[01][0-9]|2[0-3]):[0-5][0-9]', value):
+        raise Error('Window must be HH:MM-HH:MM in 24-hour time')
+    start, end = [int(part[:2]) * 60 + int(part[3:]) for part in value.split('-')]
+    if start == end:
+        raise Error('Maintenance window must have different start and end times')
+    return start, end
+
+
+def in_window(policy, instant=None):
+    start, end = valid_window(policy['window'])
+    try:
+        local = (instant or dt.datetime.now(dt.timezone.utc)).astimezone(ZoneInfo(policy['timezone']))
+    except ZoneInfoNotFoundError as exc:
+        raise Error('Unknown maintenance-window timezone') from exc
+    minute = local.hour * 60 + local.minute
+    return start <= minute < end if start < end else minute >= start or minute < end
+
+
+def unit_quote(value):
+    if any(ord(c) < 32 for c in value):
+        raise Error('Control characters are not supported in systemd command paths')
+    return '"' + value.replace('\\', '\\\\').replace('"', '\\"').replace('%', '%%').replace('$', '$$') + '"'
+
+
+def auto_update(manager, args):
+    path = manager.directory / 'auto-update.json'
+    policy = read_json(path, {})
+    identifier = 'crowsnest-collector-' + hashlib.sha256(str(manager.root).encode()).hexdigest()[:12]
+    units = Path(os.environ.get('XDG_CONFIG_HOME', str(Path.home() / '.config'))) / 'systemd' / 'user'
+    if args.action == 'run':
+        manager.recover()
+        if not policy.get('enabled') or not in_window(policy):
+            print('Automatic updates are disabled or outside the maintenance window')
+            return
+        current = read_json(manager.directory / 'state.json', {}).get('version')
+        if not current:
+            raise Error('Complete one manual migrate/update before enabling automatic updates')
+        selected = latest_version(current, patch_only=True)
+        if selected == current:
+            manager.publish('no_update', current, current, 'not_needed')
+            return
+        if read_json(manager.directory / 'blocked-version.json', {}).get('version') == selected:
+            print('Automatic retry skipped for previously rolled-back collector ' + selected + '; retry manually or wait for a newer release')
+            return
+        # Fetch/pull can take time. Check the window again immediately before disruption.
+        try:
+            release = manifest_for(selected)
+        except Error:
+            manager.publish('failed', current, selected, 'not_needed')
+            raise
+        if not in_window(policy):
+            return
+        manager.update(release, window_policy=policy)
+        return
+    if args.action == 'disable':
+        # Disable policy first so a concurrently fired timer cannot update.
+        atomic_json(path, {**policy, 'enabled': False})
+        manager.publish()
+        try:
+            run(['systemctl', '--user', 'disable', '--now', identifier + '.timer'])
+        except Error:
+            print('Update policy disabled; the user timer could not be stopped. Its next run will skip updates.', file=sys.stderr)
+        print('Automatic collector updates disabled')
+        return
+    valid_window(args.window)
+    try:
+        ZoneInfo(args.timezone)
+    except ZoneInfoNotFoundError as exc:
+        raise Error('Unknown maintenance-window timezone') from exc
+    if not read_json(manager.directory / 'state.json', {}).get('version'):
+        raise Error('Complete one manual migrate/update before enabling automatic updates')
+    manager.check_engine(read_json(manager.directory / 'state.json', {}))
+    if manager.engine.command != ['docker']:
+        raise Error('User timer needs direct Docker access; sudo cannot prompt during unattended updates')
+    run(['systemctl', '--user', 'show-environment'])
+    linger = run(['loginctl', 'show-user', str(os.getuid()), '--property=Linger', '--value']).strip()
+    if linger != 'yes':
+        raise Error('Enable user lingering with loginctl enable-linger before enabling unattended updates')
+    units.mkdir(parents=True, exist_ok=True)
+    script = Path(__file__).resolve()
+    service = ('[Unit]\nDescription=Crowsnest compatible collector patch update\n\n[Service]\nType=oneshot\n'
+               'UMask=0077\nNoNewPrivileges=true\nTimeoutStartSec=30min\nExecStart=' + unit_quote(sys.executable) + ' ' +
+               unit_quote(str(script)) + ' --directory ' + unit_quote(str(manager.root)) + ' auto-update run\n')
+    timer = ('[Unit]\nDescription=Check opt-in Crowsnest updates during the configured window\n\n[Timer]\n'
+             'OnCalendar=*-*-* *:00/15:00\nRandomizedDelaySec=300\nFixedRandomDelay=true\nPersistent=true\n'
+             'Unit=' + identifier + '.service\n\n[Install]\nWantedBy=timers.target\n')
+    for suffix, content in [('service', service), ('timer', timer)]:
+        unit = units / (identifier + '.' + suffix)
+        if unit.is_symlink():
+            raise Error('Refusing to replace a symbolic systemd unit')
+        unit.write_text(content)
+        unit.chmod(0o600)
+    atomic_json(path, {'enabled': False, 'window': args.window, 'timezone': args.timezone})
+    try:
+        run(['systemctl', '--user', 'daemon-reload'])
+        run(['systemctl', '--user', 'enable', '--now', identifier + '.timer'])
+        atomic_json(path, {'enabled': True, 'window': args.window, 'timezone': args.timezone})
+    finally:
+        manager.publish()
+    print('Automatic compatible patch updates enabled: ' + args.window + ' ' + args.timezone)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--directory', type=Path, default=Path(__file__).resolve().parent)
+    parser.add_argument('--timeout', type=int, default=240, help='Report verification timeout in seconds (30-1800)')
+    commands = parser.add_subparsers(dest='command', required=True)
+    commands.add_parser('status')
+    commands.add_parser('manager-info', help='Show manager version and supported reporting protocols')
+    for name in ('migrate', 'update', 'self-update'):
+        child = commands.add_parser(name)
+        child.add_argument('--version', help='Published stable collector release (default newest; compatibility checked before deployment)')
+    commands.add_parser('rollback')
+    commands.add_parser('restart', help='Recreate the installed collector to load replaced credentials')
+    automatic = commands.add_parser('auto-update').add_subparsers(dest='action', required=True)
+    enable = automatic.add_parser('enable')
+    enable.add_argument('--window', default='02:00-04:00')
+    enable.add_argument('--timezone', default='UTC')
+    automatic.add_parser('disable')
+    automatic.add_parser('run')
+    args = parser.parse_args()
+    manager = None
+    try:
+        if args.command == 'manager-info':
+            print(json.dumps(manager_info()))
+            return 0
+        if not 30 <= args.timeout <= 1800:
+            raise Error('Verification timeout must be 30-1800 seconds')
+        if not args.directory.is_dir():
+            raise Error('Installation directory does not exist')
+        manager = Manager(args.directory, timeout=args.timeout)
+        if args.command == 'status':
+            print(json.dumps(manager.status(), indent=2))
+            return 0
+        manager.acquire()
+        if args.command != 'self-update' and not (args.command == 'auto-update' and args.action == 'disable'):
+            manager.engine = Engine(manager.root)
+        if args.command in ('migrate', 'update'):
+            manager.recover()
+            selected = args.version or latest_version()
+            try:
+                release = manifest_for(selected)
+            except Error:
+                current = read_json(manager.directory / 'state.json', {}).get('version')
+                manager.publish('failed', current, selected, 'not_needed')
+                raise
+            manager.update(release, migrate=args.command == 'migrate')
+            print('Collector ' + selected + ' is reporting successfully')
+        elif args.command == 'self-update':
+            selected = args.version or latest_version()
+            refresh_manager(manager, manifest_for(selected, for_manager=True))
+        elif args.command == 'rollback':
+            manager.rollback()
+            print('Previous collector deployment restored and reporting verified')
+        elif args.command == 'restart':
+            manager.restart()
+            print('Installed collector restarted and reporting verified')
+        else:
+            auto_update(manager, args)
+        return 0
+    except (Error, OSError, ValueError) as exc:
+        print('Crowsnest: ' + str(exc), file=sys.stderr)
+        return 1
+    finally:
+        if manager and manager.lock:
+            manager.lock.close()
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

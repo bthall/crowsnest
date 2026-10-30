@@ -46,9 +46,10 @@ with tarfile.open(sys.argv[1]) as archive:
  print(json.dumps({'names':[m.name for m in members],'modes':{m.name:m.mode for m in members},'config':json.loads(archive.extractfile('collector.json').read()),'readme':archive.extractfile('README.txt').read().decode(),'compose':archive.extractfile('compose.yaml').read().decode()}))`,archive],{encoding:'utf8'});
 assert.equal(parsed.status,0,parsed.stderr);
 const bundle=JSON.parse(parsed.stdout), config=bundle.config;
-assert.deepEqual(bundle.names,['compose.yaml','collector.py','proxy.cfg','collector.json','README.txt']);
+assert.deepEqual(bundle.names,['compose.yaml','collector.py','proxy.cfg','crowsnest','collector.json','README.txt']);
 assert.equal(bundle.modes['collector.json'],0o600);
-assert.ok(bundle.readme.startsWith('Crowsnest collector '+JSON.parse(await readFile('package.json','utf8')).version));
+assert.equal(bundle.modes.crowsnest,0o700);
+assert.ok(bundle.readme.startsWith('Crowsnest collector '+JSON.parse(await readFile('collector/version.json','utf8')).version));
 assert.ok(!bundle.compose.includes('ports:')&&!bundle.compose.includes('privileged:'));
 assert.equal(config.hostId,id);assert.equal(config.url,env.SITE_ORIGIN);
 const path='/api/hosts/'+id, ingest='/api/ingest/'+id;

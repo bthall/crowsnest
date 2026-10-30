@@ -10,3 +10,13 @@ function collectorDirectoryCommands(current='/srv/docker/crowsnest-collector',le
     '  cd -- '+quote(current),
     'else','  cd -- '+quote(legacy),'fi'];
 }
+
+// Token replacement must retain a migrated installation's saved image deployment.
+function collectorRestartCommands() {
+  return ['if [ -e .crowsnest/active.json ] || [ -e .crowsnest/state.json ] || [ -e .crowsnest/pending.json ]; then',
+    '  test -x ./crowsnest',
+    '  ./crowsnest restart',
+    'else',
+    '  sudo docker compose up -d --force-recreate collector',
+    'fi'];
+}

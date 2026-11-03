@@ -13,6 +13,7 @@ Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 
 ### Changed
 
+- Update packaged and legacy collector runtimes to Python 3.15.0 and HAProxy 3.4.7, and scan both packaged images for fixable high/critical vulnerabilities in pull requests.
 - Overlap host-list storage reads within a fixed concurrency budget, including when signal alerts are enabled.
 
 ### Fixed

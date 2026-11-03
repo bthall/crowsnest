@@ -62,3 +62,13 @@ jobs:
             haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg
       - name: Verify actual migration, report delivery, and rollback
         run: python3 scripts/check-updater-docker.py
+      - name: Scan packaged collector and proxy for fixable vulnerabilities
+        run: |
+          for image in crowsnest-collector:ci crowsnest-socket-proxy:ci; do
+            docker save "$image" --output "$RUNNER_TEMP/collector-image.tar"
+            docker run --rm \
+              --volume "$RUNNER_TEMP/collector-image.tar:/image.tar:ro" \
+              aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa \
+              image --input /image.tar --scanners vuln --severity HIGH,CRITICAL \
+              --ignore-unfixed --exit-code 1 --no-progress
+          done

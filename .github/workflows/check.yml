@@ -57,7 +57,7 @@ jobs:
           read -r collector_version collector_protocol < <(python3 -c "import json; m=json.load(open('collector/version.json')); print(m['version'],m['protocol'])")
           docker run --rm --network none --entrypoint python \
             --env "EXPECTED_COLLECTOR_VERSION=$collector_version" --env "EXPECTED_COLLECTOR_PROTOCOL=$collector_protocol" crowsnest-collector:ci \
-            -c "import os,runpy; c=runpy.run_path('/app/collector.py'); assert c['COLLECTOR_VERSION'] == os.environ['EXPECTED_COLLECTOR_VERSION']; assert int(c['COLLECTOR_PROTOCOL']) == int(os.environ['EXPECTED_COLLECTOR_PROTOCOL'])"
+            -c "import importlib.util,os,runpy; assert all(importlib.util.find_spec(name) is None for name in ('pip','setuptools','ensurepip')); c=runpy.run_path('/app/collector.py'); assert c['COLLECTOR_VERSION'] == os.environ['EXPECTED_COLLECTOR_VERSION']; assert int(c['COLLECTOR_PROTOCOL']) == int(os.environ['EXPECTED_COLLECTOR_PROTOCOL'])"
           docker run --rm --network none crowsnest-socket-proxy:ci \
             haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg
       - name: Verify actual migration, report delivery, and rollback

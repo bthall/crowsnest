@@ -1,4 +1,4 @@
-FROM python:3.13.17-alpine@sha256:bf12ecc0bea3f171d55145dd02c78b5eeb09f30ee2ac9cc2b4c9e4e8f5e30741
+FROM python:3.15.0-alpine@sha256:2699b90f4d562a22e2dd076c82f964032f64814204bff36d271a54ba4cc2c7e2
 WORKDIR /app
 COPY worker/collector.py /app/collector.py
 COPY collector/version.json /tmp/collector-version.json

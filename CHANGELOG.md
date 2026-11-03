@@ -13,10 +13,12 @@ Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 
 ### Changed
 
+- Update packaged and legacy collector runtimes to Python 3.15.0 and HAProxy 3.4.7, and scan both packaged images for fixable high/critical vulnerabilities in pull requests.
 - Overlap host-list storage reads within a fixed concurrency budget, including when signal alerts are enabled.
 
 ### Fixed
 
+- Omit unused Python package installers and bootstrap wheels from the standard-library-only collector image, removing vulnerable bundled tooling from the runtime.
 - Pin collector/notifier runtimes and the read-only socket proxy to reviewed image digests. Bound collector/proxy resources and expose delivery-based Docker health checks without additional notifications.
 
 - Validate the complete staged restore schema before replacing an instance database, and include committed WAL changes in the restored snapshot.

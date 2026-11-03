@@ -57,8 +57,18 @@ jobs:
           read -r collector_version collector_protocol < <(python3 -c "import json; m=json.load(open('collector/version.json')); print(m['version'],m['protocol'])")
           docker run --rm --network none --entrypoint python \
             --env "EXPECTED_COLLECTOR_VERSION=$collector_version" --env "EXPECTED_COLLECTOR_PROTOCOL=$collector_protocol" crowsnest-collector:ci \
-            -c "import os,runpy; c=runpy.run_path('/app/collector.py'); assert c['COLLECTOR_VERSION'] == os.environ['EXPECTED_COLLECTOR_VERSION']; assert int(c['COLLECTOR_PROTOCOL']) == int(os.environ['EXPECTED_COLLECTOR_PROTOCOL'])"
+            -c "import importlib.util,os,runpy; assert all(importlib.util.find_spec(name) is None for name in ('pip','setuptools','ensurepip')); c=runpy.run_path('/app/collector.py'); assert c['COLLECTOR_VERSION'] == os.environ['EXPECTED_COLLECTOR_VERSION']; assert int(c['COLLECTOR_PROTOCOL']) == int(os.environ['EXPECTED_COLLECTOR_PROTOCOL'])"
           docker run --rm --network none crowsnest-socket-proxy:ci \
             haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg
       - name: Verify actual migration, report delivery, and rollback
         run: python3 scripts/check-updater-docker.py
+      - name: Scan packaged collector and proxy for fixable vulnerabilities
+        run: |
+          for image in crowsnest-collector:ci crowsnest-socket-proxy:ci; do
+            docker save "$image" --output "$RUNNER_TEMP/collector-image.tar"
+            docker run --rm \
+              --volume "$RUNNER_TEMP/collector-image.tar:/image.tar:ro" \
+              aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa \
+              image --input /image.tar --scanners vuln --severity HIGH,CRITICAL \
+              --ignore-unfixed --exit-code 1 --no-progress
+          done

@@ -3,6 +3,7 @@ import {chmodSync,mkdtempSync,mkdirSync,readFileSync,rmSync,statSync,writeFileSy
 import {spawnSync} from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
+import {readCollectorMetadata,renderManager} from './collector-metadata.mjs';
 const root=mkdtempSync(path.join(os.tmpdir(),'crowsnest-install-test-'));
 const bin=path.join(root,'bin'), calls=path.join(root,'calls');
 mkdirSync(bin);
@@ -34,6 +35,8 @@ try {
   assert.equal(statSync(path.join(target,'collector.json')).mode&0o777,0o600);
   assert.equal(statSync(path.join(target,'.env')).mode&0o777,0o600);
   assert.equal(statSync(path.join(target,'proxy.cfg')).mode&0o777,0o644);
+  assert.equal(statSync(path.join(target,'crowsnest')).mode&0o777,0o700);
+  assert.equal(readFileSync(path.join(target,'crowsnest'),'utf8'),renderManager(readFileSync('collector/crowsnest','utf8'),readCollectorMetadata())+'\n');
   const compose=readFileSync(path.join(target,'compose.yaml'),'utf8');
   assert.match(compose,/name: crowsnest-collector\n/);
   assert.match(compose,/container_name: crowsnest-collector/);

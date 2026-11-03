@@ -22,6 +22,7 @@ const authFixtures=new Map([
 const findings=new Set();
 function check(name,buffer,history=false) {
   const label=name+(history?' (history)':'');
+  if(/(?:^|\/)\.crowsnest\//.test(name))findings.add(label+' (private collector manager state)');
   if(forbiddenFile.test(name)&&!name.endsWith('.env.example'))findings.add(label+' (generated credential/key file)');
   // The generated logo is a PNG binary, not configuration or executable text.
   if(buffer.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])))return;

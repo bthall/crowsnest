@@ -1,4 +1,8 @@
 version: 2
+multi-ecosystem-groups:
+  collector-runtime:
+    schedule:
+      interval: weekly
 updates:
   - package-ecosystem: npm
     directory: /
@@ -14,6 +18,16 @@ updates:
     ignore:
       - dependency-name: node
         update-types: [version-update:semver-major]
+  # Dependabot treats Dockerfiles and Compose as separate ecosystems. Group the
+  # canonical runtime pins and legacy enrollment pins into one reviewed update.
+  - package-ecosystem: docker
+    directory: /collector
+    patterns: [python, haproxy]
+    multi-ecosystem-group: collector-runtime
+  - package-ecosystem: docker-compose
+    directory: /worker
+    patterns: [python, haproxy]
+    multi-ecosystem-group: collector-runtime
   - package-ecosystem: github-actions
     directory: /
     schedule:

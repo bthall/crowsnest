@@ -2,7 +2,7 @@
 
 ## New installation
 
-In the private dashboard, choose **Connect a host**, enter a unique name, and choose **Prepare setup**. Choose **Copy setup** and paste it into a Bash terminal on the Docker host as your normal user. Docker Engine and Compose v2 must already be installed. Setup detects whether Docker needs sudo, creates a private directory owned by your user, and writes `compose.yaml`, `collector.py`, `proxy.cfg`, `collector.json`, and `.env`. It validates the Compose configuration without pulling images or starting containers.
+In the private dashboard, choose **Connect a host**, enter a unique name, and choose **Prepare setup**. Choose **Copy setup** and paste it into a Bash terminal on the Docker host as your normal user. Docker Engine and Compose v2 must already be installed. Setup detects whether Docker needs sudo, creates a private directory owned by your user, and writes `compose.yaml`, `collector.py`, `proxy.cfg`, `collector.json`, `.env`, and the local `crowsnest` manager. It validates the Compose configuration without pulling images or starting containers.
 
 When the terminal prints **Private Compose files prepared**, choose **Files prepared — continue**. Review `compose.yaml`, `collector.py`, and `proxy.cfg` in `/srv/docker/crowsnest-collector`, then use **Copy start commands** to start the collector. No file transfer is needed. If clipboard access is blocked, the dashboard reveals a selected, read-only setup field for manual copying. Closing setup clears the in-memory command and that field; it cannot clear your operating system clipboard or terminal history.
 
@@ -12,7 +12,7 @@ For a different installation directory, change the first copied line from `bash 
 
 ### Download alternative
 
-Choose **Download and transfer instead** to download `crowsnest-collector.tar` and transfer it privately to the host. It contains the same Compose, Python, proxy, and configuration files plus a short README. Inspect the files before starting.
+Choose **Download and transfer instead** to download `crowsnest-collector.tar` and transfer it privately to the host. It contains the same Compose, Python, proxy, and configuration files, the local manager, and a short README. Inspect the files before starting.
 
 Follow the commands shown in the dashboard as your normal user. The default sequence below assumes the archive is at `~/Downloads/crowsnest-collector.tar` and Docker requires sudo. Change the archive path to its actual location; omit sudo on Docker commands when your user has daemon access.
 
@@ -46,7 +46,7 @@ sudo docker compose logs -f collector
 
 Omit sudo if your user already has Docker access. Successful reports log `Status delivered: ... containers`. The host should appear as Reporting in the dashboard. The collector retries failures every 30 seconds; reports become stale after two minutes.
 
-`docker compose pull` and `docker compose up -d` update container images. Keep credentials private.
+Before image migration, `docker compose pull` only updates the base runtimes because collector code is bind-mounted. After image migration, use `./crowsnest update`; see [collector updates](collector-updates.md). Keep credentials private.
 
 ## Manage hosts and reporting credentials
 
@@ -56,7 +56,11 @@ To replace a reporting token, download the new `collector.json` and transfer it 
 
 ```bash
 install -m 0600 ~/Downloads/collector.json ./collector.json
-sudo docker compose up -d --force-recreate collector
+if [ -e .crowsnest/active.json ] || [ -e .crowsnest/state.json ] || [ -e .crowsnest/pending.json ]; then
+  ./crowsnest restart
+else
+  sudo docker compose up -d --force-recreate collector
+fi
 ```
 
 The existing token stays valid until a successful report using the replacement arrives. The replacement must first activate within ten minutes. An expired or lost replacement does not revoke the current token; prepare another configuration. Keep a private copy of the previous configuration until activation is confirmed so you can restore it after an expired attempt. Once activated, the previous host token is rejected. Only the latest prepared replacement can activate.
@@ -65,11 +69,24 @@ This flow rotates the per-host reporting token. The platform service credential 
 
 ## Update an existing collector
 
-Select the host, then **Manage host → Update collector → Prepare update command**. Copy the command into Bash on that host as the user who owns its installation. It replaces `collector.py` and `proxy.cfg` using temporary files, validates the existing Compose configuration, and recreates both collector services. Resource reporting requires the updated restricted proxy, which permits bounded, read-only stats requests. It does not replace `collector.json`, rotate tokens, change `.env`, or overwrite `compose.yaml`. Docker uses sudo if the user cannot access the daemon directly.
+Select the host, then **Manage host → Update collector → Prepare update command**.
+Run the copied command in Bash as the installation owner. It installs the local
+`crowsnest` manager and migrates the existing installation to the independently
+released collector and restricted proxy images. The matching collector release
+must be published and its GHCR images readable. Missing releases or failed pulls
+leave the running containers intact.
 
-For a different path, run `export CROWSNEST_COLLECTOR_DIR='/srv/docker/your-directory'` before the copied block. Missing configuration or a symlink in place of either updated file stops the update. Manage host shows the reported collector version, report time, and the version bundled with the dashboard. After running the command, watch for `Status delivered` in collector logs; the UI confirms the target version only when a fresh report arrives. Existing collectors remain compatible; older collectors show **version unknown** until updated. The bundled update is disabled when a host reports a newer version, to avoid an unintended downgrade. Compose grouping requires the updated collector; missing metadata is labeled explicitly in the table.
+For a custom path, export `CROWSNEST_COLLECTOR_DIR` before running the copied block.
+The manager preserves credentials, `.env`, original Compose files, overrides, and
+host registration. After the one-time migration, use `./crowsnest update`,
+`./crowsnest status`, and `./crowsnest rollback`. Automatic updates remain disabled
+until explicitly enabled on that host.
 
-Update and credential replacement commands choose the Crowsnest directory when it exists, otherwise the earlier default directory. If both exist, export `CROWSNEST_COLLECTOR_DIR` to choose one. New setup refuses to create a second collector when either generation's container names already exist.
+See [collector updates](collector-updates.md) for exact commands, maintenance
+windows, supported customizations, effective deployment snapshots, and recovery.
+Use the manager for deployment changes after migration: plain Compose commands
+against the unchanged legacy source template would restore its old deployment.
+
 
 ## Migrate an existing installation
 

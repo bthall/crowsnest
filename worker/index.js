@@ -2,11 +2,15 @@ const COLLECTOR = '__COLLECTOR_SOURCE__';
 const PROXY = '__PROXY_SOURCE__';
 const COMPOSE = '__COMPOSE_SOURCE__';
 const SETUP = '__SETUP_SOURCE__';
+const UPDATE_MANAGER = '__UPDATE_MANAGER_SOURCE__';
 const HTML = '__BOARD_HTML__';
 const BOARD_JS = '__BOARD_JS__';
 const BOARD_CSS = '__BOARD_CSS__';
 const LOGO = '__LOGO_BASE64__';
 const VERSION = '__APP_VERSION__';
+const COLLECTOR_VERSION = '__COLLECTOR_VERSION__';
+const COLLECTOR_PROTOCOL = Number('__COLLECTOR_PROTOCOL__');
+const MIN_COLLECTOR_PROTOCOL = Number('__MIN_COLLECTOR_PROTOCOL__');
 // __VERSIONS_SOURCE__
 const STATES = new Set(['running','exited','created','restarting','paused','dead','removing','unknown']);
 const HEALTH = new Set(['healthy','unhealthy','starting','none']);
@@ -33,6 +37,20 @@ async function readJson(request, max=131072) {
   if(!data || typeof data!=='object' || Array.isArray(data))throw new Error('Expected a JSON object');
   return data;
 }
+function validatedUpdateStatus(value) {
+  if(!value || typeof value!=='object' || Array.isArray(value) || typeof value.autoUpdates!=='boolean')throw new Error('Invalid update status');
+  const status={autoUpdates:value.autoUpdates};
+  for(const key of ['lastAttempt','lastResult','fromVersion','toVersion','rollback']) {
+    const field=value[key];
+    if(field==null){status[key]=null;continue;}
+    const valid=key==='lastAttempt'?typeof field==='string' && field.length<=32 && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?(?:Z|\+00:00)$/.test(field) && Number.isFinite(Date.parse(field)):
+      key==='lastResult'?['updated','rolled_back','failed','rollback_failed','no_update'].includes(field):
+      key==='rollback'?['not_needed','succeeded','failed'].includes(field):validCollectorVersion(field);
+    if(!valid)throw new Error('Invalid update status');
+    status[key]=field;
+  }
+  return status;
+}
 function validatedReport(data) {
   if(!data || !Array.isArray(data.containers) || data.containers.length>250) throw new Error('Invalid containers');
   const seen=new Set();
@@ -48,11 +66,12 @@ function validatedReport(data) {
   });
   if(!text(data.engineVersion,80)) throw new Error('Invalid version');
   if(data.collectorVersion!==undefined && !validCollectorVersion(data.collectorVersion))throw new Error('Invalid collector version');
+  if(data.collectorProtocol!==undefined && (!Number.isSafeInteger(data.collectorProtocol) || data.collectorProtocol<1 || data.collectorProtocol>65535))throw new Error('Invalid collector protocol');
   if(data.resourceSampling!==undefined && !RESOURCE_STATES.has(data.resourceSampling))throw new Error('Invalid resource sampling');
-  return {containers,engineVersion:data.engineVersion,...data.collectorVersion!==undefined?{collectorVersion:data.collectorVersion}:{},...data.resourceSampling!==undefined?{resourceSampling:data.resourceSampling}:{},receivedAt:new Date().toISOString()};
+  return {containers,engineVersion:data.engineVersion,...data.collectorVersion!==undefined?{collectorVersion:data.collectorVersion}:{},...data.collectorProtocol!==undefined?{collectorProtocol:data.collectorProtocol}:{},...data.updateStatus!==undefined?{updateStatus:validatedUpdateStatus(data.updateStatus)}:{},...data.resourceSampling!==undefined?{resourceSampling:data.resourceSampling}:{},receivedAt:new Date().toISOString()};
 }
 function installer(config) {
-  const blocks=[['compose.yaml',COMPOSE],['collector.py',COLLECTOR],['proxy.cfg',PROXY]];
+  const blocks=[['compose.yaml',COMPOSE],['collector.py',COLLECTOR],['proxy.cfg',PROXY],['crowsnest',UPDATE_MANAGER]];
   blocks.push(['collector.json',JSON.stringify(config,null,2)]);
   const files=blocks.map(([file,body])=>"cat > "+file+" <<'CROWSNEST_FILE_EOF'\n"+body+"\nCROWSNEST_FILE_EOF\n").join('');
   return SETUP.replace('__WRITE_FILES__',()=>files);
@@ -60,13 +79,11 @@ function installer(config) {
 // __COLLECTOR_DIRECTORY_SOURCE__
 function collectorUpdate() {
   return ["bash <<'CROWSNEST_UPDATE'",'set -eu',...collectorDirectoryCommands(),
-    'test -O .','test -f collector.json','test -f compose.yaml','test ! -L collector.py','test ! -L proxy.cfg',
-    'update_file="$(mktemp .collector.py.XXXXXX)"','proxy_file="$(mktemp .proxy.cfg.XXXXXX)"',
-    "trap 'rm -f \"$update_file\" \"$proxy_file\"' EXIT", "cat > \"$update_file\" <<'CROWSNEST_COLLECTOR_SOURCE'",COLLECTOR,'CROWSNEST_COLLECTOR_SOURCE',
-    "cat > \"$proxy_file\" <<'CROWSNEST_PROXY_SOURCE'",PROXY,'CROWSNEST_PROXY_SOURCE',
-    'chmod 0644 "$update_file" "$proxy_file"','mv -- "$update_file" collector.py','mv -- "$proxy_file" proxy.cfg',
-    'if docker info >/dev/null 2>&1; then','  docker compose config --quiet && docker compose up -d --force-recreate socket-proxy collector',
-    'else','  sudo docker compose config --quiet && sudo docker compose up -d --force-recreate socket-proxy collector','fi','CROWSNEST_UPDATE',''].join('\n');
+    'test -O .','test -f collector.json','test -f compose.yaml','test ! -L crowsnest',
+    'command -v python3 >/dev/null','update_file="$(mktemp .crowsnest-manager.XXXXXX)"',
+    "trap 'rm -f \"$update_file\"' EXIT", "cat > \"$update_file\" <<'CROWSNEST_MANAGER_SOURCE'",UPDATE_MANAGER,'CROWSNEST_MANAGER_SOURCE',
+    'chmod 0700 "$update_file"','mv -- "$update_file" crowsnest',
+    './crowsnest migrate --version '+COLLECTOR_VERSION,'CROWSNEST_UPDATE',''].join('\n');
 }
 function tar(files) {
   const encoder=new TextEncoder(), chunks=[];
@@ -96,8 +113,8 @@ function collectorConfig(env,id,token) {return {url:dashboardOrigin(env.SITE_ORI
 function collectorDownload(config,format='compose') {
   const downloadHeaders={...headers,'X-Crowsnest-Host-Id':config.hostId};
   if(format==='config')return new Response(JSON.stringify(config,null,2)+'\n',{headers:{...downloadHeaders,'Content-Type':'application/json','Content-Disposition':'attachment; filename="collector.json"'}});
-  const readme='Crowsnest collector '+VERSION+'\n\nReview compose.yaml, collector.py and proxy.cfg before starting.\ncollector.json contains private reporting credentials; never commit it.\nThe collector reads container status through a restricted socket proxy.\nThe proxy runs as container root with all capabilities dropped.\nNo ports are published. No logs or environment variables are reported.\n\nFollow the dashboard deployment steps to create a private directory,\nextract with tar --keep-old-files, write the current user UID/GID to .env,\nand run docker compose up -d. Do not overwrite an existing installation.\nFull guide: https://github.com/bthall/crowsnest/blob/main/docs/deployment.md\n';
-  const bytes=tar([['compose.yaml',COMPOSE,0o644],['collector.py',COLLECTOR,0o644],['proxy.cfg',PROXY,0o644],['collector.json',JSON.stringify(config,null,2)+'\n',0o600],['README.txt',readme,0o644]]);
+  const readme='Crowsnest collector '+COLLECTOR_VERSION+'\n\nReview compose.yaml, collector.py and proxy.cfg before starting.\ncollector.json contains private reporting credentials; never commit it.\nThe collector reads container status through a restricted socket proxy.\nThe proxy runs as container root with all capabilities dropped.\nNo ports are published. No logs or environment variables are reported.\n\nFollow the dashboard deployment steps to create a private directory,\nextract with tar --keep-old-files, write the current user UID/GID to .env,\nand run docker compose up -d. Do not overwrite an existing installation.\nAfter the independent collector release is published, use ./crowsnest migrate\nfor the one-time image migration, then ./crowsnest update for later updates.\nAutomatic updates remain disabled until explicitly enabled on this host.\nThe manager requires host Python 3.9+ and local Docker Compose v2 access.\nFull guide: https://github.com/bthall/crowsnest/blob/main/docs/deployment.md\n';
+  const bytes=tar([['compose.yaml',COMPOSE,0o644],['collector.py',COLLECTOR,0o644],['proxy.cfg',PROXY,0o644],['crowsnest',UPDATE_MANAGER,0o700],['collector.json',JSON.stringify(config,null,2)+'\n',0o600],['README.txt',readme,0o644]]);
   if(format==='setup')return json({hostId:config.hostId,packageBase64:btoa(Array.from(bytes,c=>String.fromCharCode(c)).join('')),setupCommand:"bash <<'CROWSNEST_SETUP'\nexport CROWSNEST_PREPARE_ONLY=1\n"+installer(config)+'\nCROWSNEST_SETUP\n'});
   return new Response(bytes,{headers:{...downloadHeaders,'Content-Type':'application/x-tar','Content-Disposition':'attachment; filename="crowsnest-collector.tar"'}});
 }
@@ -255,7 +272,7 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
           hosts.push(...batch.filter(Boolean));
         } cursor=list.truncated?list.cursor:undefined;
       }while(cursor);
-      return json({hosts,availableCollectorVersion:VERSION});
+      return json({hosts,availableCollectorVersion:COLLECTOR_VERSION,collectorProtocol:COLLECTOR_PROTOCOL,minimumCollectorProtocol:MIN_COLLECTOR_PROTOCOL});
     }
     if(path==='/api/hosts' && request.method==='POST') {
       if(!sameOrigin(request))return json({error:'Invalid origin'},403);
@@ -320,7 +337,7 @@ export default {async scheduled(controller,env,ctx) {ctx.waitUntil(sweepNotifica
       }
       if(hostRoute[2]==='collector' && request.method==='POST') {
         if(Object.keys(data).some(k=>k!=='format'))return json({error:'Choose a collector package or configuration'},400);
-        if(data.format==='update')return json({updateCommand:collectorUpdate(),collectorVersion:VERSION});
+        if(data.format==='update')return json({updateCommand:collectorUpdate(),collectorVersion:COLLECTOR_VERSION});
         if(!collectorReady(env))return json({error:'Collector setup unavailable'},503);
         if(!['compose','config','setup'].includes(data.format))return json({error:'Choose a collector package or configuration'},400);
         const token=crypto.randomUUID()+crypto.randomUUID();

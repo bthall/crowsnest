@@ -10,12 +10,15 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('collector', Path('worker/collector.py'))
 collector = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(collector)
-collector.COLLECTOR_VERSION = json.loads(Path('package.json').read_text())['version']
+collector_release = json.loads(Path('collector/version.json').read_text())
+collector.COLLECTOR_VERSION = collector_release['version']
+collector.COLLECTOR_PROTOCOL = collector_release['protocol']
 CONFIG = {'url': 'https://board.example.com', 'hostId': '00000000-0000-4000-8000-000000000000',
           'hostToken': 'test-host-token', 'serviceToken': 'test-service-token'}
 INSPECT = {
@@ -59,6 +62,32 @@ class CollectorChecks(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.report(Sink(reply))
         self.heartbeat.assert_not_called()
+
+    def test_public_updater_metadata_is_bounded_optional_and_allowlisted(self):
+        value = {'autoUpdates': False, 'lastAttempt': '2026-10-29T20:00:00Z',
+                 'lastResult': 'rolled_back', 'fromVersion': '0.11.1', 'toVersion': '0.11.2',
+                 'rollback': 'succeeded', 'privatePath': '/secret', 'token': 'must-not-collect'}
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / 'update-status.json'
+            with patch.object(collector, 'UPDATE_STATUS_PATH', path):
+                self.assertIsNone(collector.update_status())
+                path.write_text(json.dumps(value))
+                public = collector.update_status()
+                self.assertEqual(set(public), {'autoUpdates', 'lastAttempt', 'lastResult', 'fromVersion', 'toVersion', 'rollback'})
+                sink = Sink()
+                self.report(sink)
+                report = json.loads(sink.requests[0].data)
+                self.assertEqual(report['updateStatus'], public)
+                self.assertEqual(report['collectorProtocol'], collector.COLLECTOR_PROTOCOL)
+                self.assertNotIn('must-not-collect', json.dumps(report))
+                for invalid in ['x' * 4097, '{}', '[]', 'not json',
+                                json.dumps({**value, 'autoUpdates': 1}),
+                                json.dumps({**value, 'lastAttempt': '2026-99-29T20:00:00Z'}),
+                                json.dumps({**value, 'lastResult': 'shell error with credentials'}),
+                                json.dumps({**value, 'toVersion': '1.0.0-01'})]:
+                    path.write_text(invalid)
+                    self.assertIsNone(collector.update_status())
+                    self.report(Sink())
 
     def test_read_only_marker_preserves_delivery_confirmation(self):
         self.heartbeat.side_effect = OSError('Read-only filesystem')

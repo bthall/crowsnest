@@ -5,6 +5,12 @@ Version numbers follow the policy in [docs/versioning.md](docs/versioning.md).
 
 ## [Unreleased]
 
+### Added
+
+- Independent amd64/arm64 collector and restricted proxy image releases, pinned release manifests, management archives, SBOMs, and checksums.
+- Host-owned collector migration, update, status, and rollback commands with accepted-report verification, recovery checkpoints, and explicit per-host automatic patch updates within a maintenance window.
+- Independent collector version/protocol guidance and bounded, credential-free update outcomes in host management.
+
 ### Changed
 
 - Overlap host-list storage reads within a fixed concurrency budget, including when signal alerts are enabled.

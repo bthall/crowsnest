@@ -64,7 +64,7 @@ Crowsnest is a private dashboard for Docker host and container status. Run your 
 - Optional authenticated ntfy notifications, phone subscription help, recovery messages, and retry backoff.
 - Notification category, host-delay, and priority controls for the whole fleet.
 - Timed per-host maintenance pauses with automatic notification resumption.
-- Copyable collector updates that preserve reporting credentials and user permissions.
+- Image-based collector updates with local migration, update, status, and rollback commands; automatic patch updates are explicit per-host opt-in.
 - Per-host collector versions, update guidance, and confirmation from a fresh report.
 - Container details with image, state, health, timestamps, restart count, Compose metadata, copyable ID, and recent changes.
 
@@ -143,6 +143,7 @@ See [development and validation](docs/development.md) for build output, test cov
 | [Container details](docs/container-details.md) | Container facts, recent changes, freshness, and collector versions |
 | [ChatGPT Sites setup](docs/chatgpt-sites.md) | Separate private deployments and distribution readiness |
 | [Roadmap](docs/roadmap.md) | Future monitoring features |
+| [Collector updates](docs/collector-updates.md) | Image migration, update windows, and rollback |
 | [Versioning](docs/versioning.md) | Compatibility, changelog, and release procedure |
 | [Configuration](docs/configuration.md) | Runtime bindings, collector configuration, paths, and limits |
 | [Architecture](docs/architecture.md) | Data flow, access control, and hosting |

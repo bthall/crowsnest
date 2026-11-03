@@ -3,6 +3,7 @@ import {readFile,writeFile,mkdir,stat,symlink} from 'node:fs/promises';
 import {spawnSync} from 'node:child_process';
 import {join} from 'node:path';
 import {testBucket} from './test-storage.mjs';
+import {readCollectorMetadata,renderManager} from './collector-metadata.mjs';
 const source=await readFile('dist/server/index.js','utf8');
 const worker=(await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'))).default;
 const objects=new Map(), requests=[];
@@ -46,7 +47,7 @@ try {
   await deliver();const container=JSON.parse(objects.get('snapshots/'+id+'.json')).containers[0];assert.equal(container.composeProject,'media');assert.equal(container.composeService,'web');assert.ok(!('labels' in container));
   for(const value of [null,{},'x'.repeat(129)]){report.containers[0].composeProject=value;assert.equal((await deliver()).status,400);}
   delete report.containers[0].composeProject;delete report.containers[0].composeService;assert.equal((await deliver()).status,200);
-  // Updating code must never rotate or expose credentials, and must work with spaces.
+  // Preparing the updater must never rotate/expose credentials and must handle spaces.
   const beforeUpdate=objects.get('hosts/'+id+'.json');
   const update=await (await call(path+'/collector','POST',{format:'update'})).json();
   assert.equal(objects.get('hosts/'+id+'.json'),beforeUpdate);assert.ok(!update.updateCommand.includes(config.hostToken)&&!update.updateCommand.includes(env.COLLECTOR_SERVICE_TOKEN));
@@ -61,15 +62,17 @@ try {
   const {rmdir}=await import('node:fs/promises');await rmdir(legacy);
   assert.equal(directoryProbe().stdout.trim(),current);
   await writeFile(join(dir,'collector.json'),'private fixture',{mode:0o600});await writeFile(join(dir,'compose.yaml'),'existing compose');await writeFile(join(dir,'collector.py'),'old code');await writeFile(join(dir,'.env'),'existing user');
-  await writeFile(join(bin,'docker'),'#!/bin/sh\nprintf "%s\\n" "$*" >> "$UPDATE_CALLS"\n',{mode:0o755});
+  await writeFile(join(bin,'python3'),'#!/bin/sh\nprintf "%s\\n" "$@" >> "$UPDATE_CALLS"\n',{mode:0o755});
   const calls=join(root,'update-calls'), execute=()=>spawnSync('bash',[],{input:update.updateCommand,env:{...process.env,PATH:bin+':'+process.env.PATH,CROWSNEST_COLLECTOR_DIR:dir,UPDATE_CALLS:calls},encoding:'utf8'});
-  const version=JSON.parse(await readFile('package.json','utf8')).version;
+  const {version}=JSON.parse(await readFile('collector/version.json','utf8'));
   assert.equal(update.collectorVersion,version);
-  assert.equal(execute().status,0);assert.equal(await readFile(join(dir,'collector.py'),'utf8'),(await readFile('worker/collector.py','utf8')).replaceAll('__APP_VERSION__',version)+'\n');
+  const prepared=execute();assert.equal(prepared.status,0,prepared.stderr);
+  assert.equal(await readFile(join(dir,'crowsnest'),'utf8'),renderManager(await readFile('collector/crowsnest','utf8'),readCollectorMetadata())+'\n');
+  assert.equal((await stat(join(dir,'crowsnest'))).mode&0o777,0o700);
+  assert.equal(await readFile(join(dir,'collector.py'),'utf8'),'old code');
   assert.equal(await readFile(join(dir,'collector.json'),'utf8'),'private fixture');assert.equal((await stat(join(dir,'collector.json'))).mode&0o777,0o600);assert.equal(await readFile(join(dir,'.env'),'utf8'),'existing user');assert.equal(await readFile(join(dir,'compose.yaml'),'utf8'),'existing compose');
-  assert.match(await readFile(calls,'utf8'),/compose up -d --force-recreate socket-proxy collector/);
-  assert.equal(await readFile(join(dir,'proxy.cfg'),'utf8'),(await readFile('worker/proxy.cfg','utf8'))+'\n');
-  const {unlink}=await import('node:fs/promises');await unlink(join(dir,'collector.py'));await symlink(join(dir,'collector.json'),join(dir,'collector.py'));assert.notEqual(execute().status,0);assert.equal(await readFile(join(dir,'collector.json'),'utf8'),'private fixture');
+  assert.equal(await readFile(calls,'utf8'),'./crowsnest\nmigrate\n--version\n'+version+'\n');
+  const {unlink}=await import('node:fs/promises');await unlink(join(dir,'crowsnest'));await symlink(join(dir,'collector.json'),join(dir,'crowsnest'));assert.notEqual(execute().status,0);assert.equal(await readFile(join(dir,'collector.json'),'utf8'),'private fixture');
   await call(path,'DELETE',{confirmName:'maintenance-host'});assert.ok(!objects.has('maintenance/hosts/'+id+'.json'));
   console.log('Passed: maintenance authorization, timers, ingestion/sweep suppression, automatic expiry, early end, truthful health/history, recovery baseline, optional Compose metadata, safe collector update, and cleanup.');
 }finally{globalThis.fetch=oldFetch;}

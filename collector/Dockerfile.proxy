@@ -1,0 +1,2 @@
+FROM haproxy:3.0.30-alpine@sha256:cf3af0facf7eb22b9fee463daf0fbc07ead740b8150696dce724264faf7b4318
+COPY worker/proxy.cfg /usr/local/etc/haproxy/haproxy.cfg

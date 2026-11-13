@@ -23,7 +23,7 @@ services:
       start_period: 60s
   collector:
     container_name: crowsnest-collector
-    image: python:3.15.0-alpine@sha256:2699b90f4d562a22e2dd076c82f964032f64814204bff36d271a54ba4cc2c7e2
+    image: python:3.15.2-alpine@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd
     user: "${COLLECTOR_UID:?Set COLLECTOR_UID in .env}:${COLLECTOR_GID:?Set COLLECTOR_GID in .env}"
     restart: unless-stopped
     command: [python, -u, /app/collector.py]

@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM node:24-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c AS build
+FROM node:24-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54 AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN --mount=type=secret,id=proxy_ca \
@@ -11,7 +11,7 @@ COPY collector/version.json collector/version.json
 COPY collector/crowsnest collector/crowsnest
 RUN node scripts/build-board.mjs --standalone
 
-FROM node:24-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c
+FROM node:24-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54
 WORKDIR /app
 ENV NODE_ENV=production NODE_OPTIONS=--max-old-space-size=192 CROWSNEST_BIND=0.0.0.0 CROWSNEST_PORT=8080 CROWSNEST_DATA_DIR=/data
 COPY --from=build --chown=node:node /app/node_modules node_modules

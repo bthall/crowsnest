@@ -2,7 +2,7 @@ name: crowsnest-collector
 services:
   socket-proxy:
     container_name: crowsnest-socket-proxy
-    image: haproxy:3.4.7-alpine@sha256:2caaf8b1a1ef67f3f1ea9b721f2821675d3ba4500fb518e23884fecb93e8dbaa
+    image: haproxy:3.4.7-alpine@sha256:b9fe316f718d5015c5cfebd8ca019591f3e44656f61d93cb8b59a1028961e530
     restart: unless-stopped
     user: "0:0"
     read_only: true
@@ -23,7 +23,7 @@ services:
       start_period: 60s
   collector:
     container_name: crowsnest-collector
-    image: python:3.15.0-alpine@sha256:2699b90f4d562a22e2dd076c82f964032f64814204bff36d271a54ba4cc2c7e2
+    image: python:3.15.2-alpine@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd
     user: "${COLLECTOR_UID:?Set COLLECTOR_UID in .env}:${COLLECTOR_GID:?Set COLLECTOR_GID in .env}"
     restart: unless-stopped
     command: [python, -u, /app/collector.py]
